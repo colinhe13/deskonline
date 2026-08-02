@@ -3,6 +3,7 @@ import { roomManager } from "./room.manager.js";
 import { deductPoints, addPoints } from "../points/points.service.js";
 import { PokerEngine } from "../poker/engine.js";
 import { Room } from "./room.js";
+import { livekitService } from "../voice/livekit.service.js";
 
 export class LobbyHandler {
   private engines: Map<string, PokerEngine> = new Map();
@@ -140,6 +141,7 @@ export class LobbyHandler {
     room.addPlayer(userId, username, minBuyIn);
     this.broadcastLobbyList();
     this.gateway.sendToUser(userId, "room:state", { room: room.toDetail() });
+    this.sendVoiceToken(userId, username, room.config.id);
   }
 
   private async handleJoinRoom(userId: string, username: string, payload: unknown) {
@@ -186,12 +188,14 @@ export class LobbyHandler {
     room.addPlayer(userId, username, buyIn);
     this.broadcastLobbyList();
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendVoiceToken(userId, username, room.config.id);
   }
 
   private async handleLeaveRoom(userId: string) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
 
+    this.gateway.sendToUser(userId, "voice:disconnect", {});
     const chips = room.removePlayer(userId);
     await addPoints(userId, chips);
 
@@ -199,8 +203,14 @@ export class LobbyHandler {
       for (const seat of room.seats) {
         if (seat.userId) {
           await addPoints(seat.userId, seat.chips);
+          this.gateway.sendToUser(seat.userId, "voice:disconnect", {});
           this.gateway.sendToUser(seat.userId, "room:state", { room: null, reason: "HOST_LEFT" });
         }
+      }
+      const engine = this.engines.get(room.config.id);
+      if (engine) {
+        engine.destroy();
+        this.engines.delete(room.config.id);
       }
       roomManager.destroyRoom(room.config.id);
     } else {
@@ -264,5 +274,12 @@ export class LobbyHandler {
 
   broadcastLobbyList() {
     this.gateway.broadcastAll("room:list", { rooms: roomManager.listRooms() });
+  }
+
+  private async sendVoiceToken(userId: string, username: string, roomId: string) {
+    const roomName = livekitService.getRoomName(roomId);
+    const token = await livekitService.generateToken(roomName, userId, username);
+    const url = livekitService.getClientUrl();
+    this.gateway.sendToUser(userId, "voice:token", { token, url });
   }
 }
