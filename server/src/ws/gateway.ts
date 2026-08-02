@@ -3,6 +3,7 @@ import { IncomingMessage } from "http";
 import { Server } from "http";
 import { verifyToken, JwtPayload } from "../auth/auth.service.js";
 import { createServerMessage, parseClientMessage } from "./protocol.js";
+import { LobbyHandler } from "../lobby/lobby.handler.js";
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -16,9 +17,11 @@ export class WebSocketGateway {
   private wss: WebSocketServer;
   private clients: Map<string, ConnectedClient> = new Map();
   private heartbeatTimer: ReturnType<typeof setInterval>;
+  private lobbyHandler: LobbyHandler;
 
   constructor(server: Server) {
     this.wss = new WebSocketServer({ server, path: "/ws" });
+    this.lobbyHandler = new LobbyHandler(this);
     this.wss.on("connection", (ws, req) => this.handleConnection(ws, req));
     this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT_INTERVAL);
   }
@@ -70,15 +73,15 @@ export class WebSocketGateway {
   }
 
   private handleMessage(userId: string, type: string, payload: unknown) {
-    // Phase 2+ will register handlers here
-    void userId;
-    void type;
-    void payload;
+    const client = this.clients.get(userId);
+    if (!client) return;
+    if (type.startsWith("room:")) {
+      this.lobbyHandler.handleMessage(userId, client.user.username, type, payload);
+    }
   }
 
   private onDisconnect(userId: string) {
-    // Phase 5 will handle reconnection logic
-    void userId;
+    this.lobbyHandler.handleDisconnect(userId);
   }
 
   private heartbeat() {
