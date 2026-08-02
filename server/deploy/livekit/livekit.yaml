@@ -11,5 +11,5 @@ keys:
 logging:
   level: info
 room:
-  auto_create: false
+  auto_create: true
   empty_timeout: 300

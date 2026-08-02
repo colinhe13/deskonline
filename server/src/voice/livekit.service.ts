@@ -4,12 +4,12 @@ import { config } from "../config.js";
 export class LiveKitService {
   private apiKey: string;
   private apiSecret: string;
-  private url: string;
+  private publicUrl: string;
 
   constructor() {
     this.apiKey = config.livekitApiKey;
     this.apiSecret = config.livekitApiSecret;
-    this.url = config.livekitUrl;
+    this.publicUrl = config.livekitPublicUrl;
   }
 
   async generateToken(roomName: string, identity: string, username: string): Promise<string> {
@@ -33,7 +33,7 @@ export class LiveKitService {
   }
 
   getClientUrl(): string {
-    return this.url.replace("ws://", "http://").replace("wss://", "https://");
+    return this.publicUrl;
   }
 }
 

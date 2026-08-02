@@ -6,6 +6,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || "",
   jwtSecret: process.env.JWT_SECRET || "",
   livekitUrl: process.env.LIVEKIT_URL || "",
+  livekitPublicUrl: process.env.LIVEKIT_PUBLIC_URL || process.env.LIVEKIT_URL || "",
   livekitApiKey: process.env.LIVEKIT_API_KEY || "",
   livekitApiSecret: process.env.LIVEKIT_API_SECRET || "",
 };
