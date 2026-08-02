@@ -1,9 +1,5 @@
 import { ref } from "vue";
-import {
-  Room,
-  RoomEvent,
-  type RemoteParticipant,
-} from "livekit-client";
+import { Room, RoomEvent, type RemoteParticipant } from "livekit-client";
 
 export interface VoiceParticipant {
   identity: string;
@@ -12,12 +8,12 @@ export interface VoiceParticipant {
   speaking: boolean;
 }
 
-export function useVoice() {
-  const isConnected = ref(false);
-  const isMuted = ref(false);
-  const participants = ref<VoiceParticipant[]>([]);
-  let room: Room | null = null;
+const isConnected = ref(false);
+const isMuted = ref(false);
+const participants = ref<VoiceParticipant[]>([]);
+let room: Room | null = null;
 
+export function useVoice() {
   async function connect(url: string, token: string) {
     if (room) disconnect();
 
@@ -42,9 +38,14 @@ export function useVoice() {
     room.on(RoomEvent.TrackUnmuted, () => updateParticipants());
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipants());
 
-    await room.connect(url, token);
-    await room.localParticipant.setMicrophoneEnabled(true);
-    isMuted.value = false;
+    try {
+      await room.connect(url, token);
+      await room.localParticipant.setMicrophoneEnabled(true);
+      isMuted.value = false;
+    } catch {
+      isConnected.value = false;
+      room = null;
+    }
   }
 
   function disconnect() {
@@ -67,13 +68,12 @@ export function useVoice() {
       local.setMicrophoneEnabled(false);
       isMuted.value = true;
     }
+    updateParticipants();
   }
 
   function updateParticipants() {
     if (!room) return;
-    const activeSpeakers = new Set(
-      room.activeSpeakers.map((s) => s.identity),
-    );
+    const activeSpeakers = new Set(room.activeSpeakers.map((s) => s.identity));
 
     const list: VoiceParticipant[] = [];
 

@@ -2,14 +2,21 @@
   <div class="poker-table">
     <div class="table-felt">
       <div
-        v-for="seat in seats"
+        v-for="seat in mergedSeats"
         :key="seat.index"
         class="seat-position"
         :style="seatStyle(seat.index)"
       >
-        <PlayerSeat :seat="seat" :is-host="seat.userId === room?.hostId" />
+        <PlayerSeat
+          :seat="seat"
+          :is-host="seat.userId === room?.hostId"
+          :is-me="seat.userId === myUserId"
+          :is-current="isCurrentSeat(seat)"
+        />
       </div>
       <div class="table-center">
+        <CommunityCards :cards="pokerState?.communityCards || []" />
+        <PotDisplay :amount="pokerState?.pot || 0" />
         <span class="table-id">#{{ room?.id }}</span>
       </div>
     </div>
@@ -18,12 +25,48 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import type { RoomDetail } from "../../stores/game";
+import type { RoomDetail, PokerState, SeatInfo, PokerPlayer } from "../../stores/game";
 import PlayerSeat from "./PlayerSeat.vue";
+import CommunityCards from "./CommunityCards.vue";
+import PotDisplay from "./PotDisplay.vue";
 
-const props = defineProps<{ room: RoomDetail | null }>();
+const props = defineProps<{
+  room: RoomDetail | null;
+  pokerState: PokerState | null;
+  myUserId: string | null;
+}>();
 
-const seats = computed(() => props.room?.seats || []);
+interface MergedSeat extends SeatInfo {
+  bet: number;
+  folded: boolean;
+  allIn: boolean;
+  isDealer: boolean;
+  cards: { rank: string; suit: string }[];
+}
+
+const mergedSeats = computed<MergedSeat[]>(() => {
+  const seats = props.room?.seats || [];
+  return seats.map((seat) => {
+    const player: PokerPlayer | undefined = props.pokerState?.players.find(
+      (p) => p.userId === seat.userId,
+    );
+    return {
+      ...seat,
+      chips: player ? player.chips : seat.chips,
+      bet: player?.bet || 0,
+      folded: player?.folded || false,
+      allIn: player?.allIn || false,
+      isDealer: player?.isDealer || false,
+      cards: player?.cards || [],
+    };
+  });
+});
+
+function isCurrentSeat(seat: MergedSeat): boolean {
+  if (!props.pokerState) return false;
+  const current = props.pokerState.players[props.pokerState.currentPlayerIndex];
+  return current?.userId === seat.userId && seat.userId !== null;
+}
 
 function seatStyle(index: number) {
   const total = props.room?.maxPlayers || 9;
@@ -66,9 +109,14 @@ function seatStyle(index: number) {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 1.2rem;
-  font-weight: bold;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.table-id {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
 }
 
 @media (max-width: 768px) {

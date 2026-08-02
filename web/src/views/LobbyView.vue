@@ -33,7 +33,7 @@ const auth = useAuthStore();
 const lobby = useLobbyStore();
 const game = useGameStore();
 const router = useRouter();
-const { connect, disconnect, send, onMessage, offMessage } = useWebSocket();
+const { send, onMessage, offMessage } = useWebSocket();
 
 const showCreateModal = ref(false);
 
@@ -46,10 +46,8 @@ function handleRoomState(payload: unknown) {
   const p = payload as { room: RoomDetail | null; reason?: string };
   if (p.room) {
     game.setRoom(p.room);
+    game.setMyUserId(auth.user?.id ?? null);
     router.push(`/table/${p.room.id}`);
-  } else {
-    game.setRoom(null);
-    router.push("/lobby");
   }
 }
 
@@ -64,7 +62,6 @@ function onRoomCreated() {
 }
 
 onMounted(() => {
-  connect();
   onMessage("room:list", handleRoomList);
   onMessage("room:state", handleRoomState);
 });
@@ -72,7 +69,6 @@ onMounted(() => {
 onUnmounted(() => {
   offMessage("room:list", handleRoomList);
   offMessage("room:state", handleRoomState);
-  disconnect();
 });
 </script>
 

@@ -1,20 +1,24 @@
-import { ref, onUnmounted } from "vue";
+import { ref } from "vue";
 import type { ServerMessage } from "../types/protocol";
 
 type MessageHandler = (payload: unknown) => void;
 
+const isConnected = ref(false);
+const isReconnecting = ref(false);
+let ws: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempts = 0;
+let intentionalClose = false;
+const handlers = new Map<string, Set<MessageHandler>>();
+
+const MAX_RECONNECT_DELAY = 15_000;
+
 export function useWebSocket() {
-  const isConnected = ref(false);
-  const isReconnecting = ref(false);
-  let ws: WebSocket | null = null;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let reconnectAttempts = 0;
-  let intentionalClose = false;
-  const handlers = new Map<string, Set<MessageHandler>>();
-
-  const MAX_RECONNECT_DELAY = 15_000;
-
   function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
     const token = localStorage.getItem("token");
     if (!token) return;
 
@@ -38,7 +42,7 @@ export function useWebSocket() {
         const msg: ServerMessage = JSON.parse(event.data);
         const msgHandlers = handlers.get(msg.type);
         if (msgHandlers) {
-          for (const handler of msgHandlers) {
+          for (const handler of [...msgHandlers]) {
             handler(msg.payload);
           }
         }
@@ -49,6 +53,7 @@ export function useWebSocket() {
 
     ws.onclose = (event) => {
       isConnected.value = false;
+      ws = null;
       if (!intentionalClose && event.code !== 4001) {
         scheduleReconnect();
       }
@@ -60,7 +65,7 @@ export function useWebSocket() {
   }
 
   function scheduleReconnect() {
-    if (reconnectTimer) return;
+    if (reconnectTimer || intentionalClose) return;
     isReconnecting.value = true;
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
     reconnectAttempts++;
@@ -101,17 +106,15 @@ export function useWebSocket() {
   }
 
   function handleVisibilityChange() {
-    if (document.visibilityState === "visible" && !isConnected.value && !intentionalClose) {
+    if (document.visibilityState === "visible" && !intentionalClose && localStorage.getItem("token")) {
       connect();
     }
   }
 
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-
-  onUnmounted(() => {
+  if (typeof document !== "undefined") {
     document.removeEventListener("visibilitychange", handleVisibilityChange);
-    disconnect();
-  });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+  }
 
   return { isConnected, isReconnecting, connect, disconnect, send, onMessage, offMessage };
 }

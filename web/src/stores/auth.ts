@@ -2,6 +2,8 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { http } from "../utils/http";
 import router from "../router";
+import { useWebSocket } from "../composables/useWebSocket";
+import { useVoice } from "../composables/useVoice";
 
 interface UserInfo {
   id: string;
@@ -20,6 +22,7 @@ export const useAuthStore = defineStore("auth", () => {
     token.value = res.data.token;
     user.value = res.data.user;
     localStorage.setItem("token", res.data.token);
+    useWebSocket().connect();
     router.push("/lobby");
   }
 
@@ -28,10 +31,13 @@ export const useAuthStore = defineStore("auth", () => {
     token.value = res.data.token;
     user.value = res.data.user;
     localStorage.setItem("token", res.data.token);
+    useWebSocket().connect();
     router.push("/lobby");
   }
 
   function logout() {
+    useVoice().disconnect();
+    useWebSocket().disconnect();
     token.value = null;
     user.value = null;
     localStorage.removeItem("token");
