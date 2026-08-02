@@ -1,26 +1,25 @@
-import { Room, RoomConfig } from "./room.js";
+import { Room, RoomSettings } from "./room.js";
 
-function generateRoomId(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let id = "";
-  for (let i = 0; i < 6; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
-}
+const SYSTEM_ROOM_ID = "main";
+
+const DEFAULT_SETTINGS: RoomSettings = {
+  maxPlayers: 9,
+  smallBlind: 10,
+  bigBlind: 20,
+  minBuyIn: 200,
+  maxBuyIn: 2000,
+};
 
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
 
-  createRoom(config: Omit<RoomConfig, "id">): Room {
-    const id = generateRoomId();
-    const room = new Room({ ...config, id });
-    this.rooms.set(id, room);
-    return room;
+  constructor() {
+    const systemRoom = new Room(SYSTEM_ROOM_ID, { ...DEFAULT_SETTINGS });
+    this.rooms.set(SYSTEM_ROOM_ID, systemRoom);
   }
 
-  destroyRoom(roomId: string) {
-    this.rooms.delete(roomId);
+  getSystemRoom(): Room {
+    return this.rooms.get(SYSTEM_ROOM_ID)!;
   }
 
   getRoom(roomId: string): Room | undefined {
@@ -36,10 +35,6 @@ export class RoomManager {
 
   listRooms() {
     return [...this.rooms.values()].map((r) => r.toSummary());
-  }
-
-  get allRooms(): Room[] {
-    return [...this.rooms.values()];
   }
 }
 

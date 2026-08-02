@@ -12,9 +12,7 @@ export interface HandResult {
 export class PokerEngine {
   private state: GameState;
   private deck: Card[] = [];
-  private actionTimer: ReturnType<typeof setTimeout> | null = null;
   private onBroadcast: (type: string, payload: unknown) => void;
-  private onTimeout: (userId: string, action: string) => void;
 
   constructor(
     players: { userId: string; username: string; seatIndex: number; chips: number }[],
@@ -22,10 +20,8 @@ export class PokerEngine {
     bigBlind: number,
     dealerIndex: number,
     onBroadcast: (type: string, payload: unknown) => void,
-    onTimeout: (userId: string, action: string) => void,
   ) {
     this.onBroadcast = onBroadcast;
-    this.onTimeout = onTimeout;
     this.state = {
       phase: "preflop",
       communityCards: [],
@@ -37,6 +33,7 @@ export class PokerEngine {
         totalBet: 0,
         folded: false,
         allIn: false,
+        hasActed: false,
         cards: [],
         isDealer: false,
         isSmallBlind: false,
@@ -83,6 +80,7 @@ export class PokerEngine {
       p.totalBet = 0;
       p.folded = false;
       p.allIn = false;
+      p.hasActed = false;
       p.cards = [];
       p.isDealer = false;
       p.isSmallBlind = false;
@@ -122,7 +120,6 @@ export class PokerEngine {
     }
 
     this.broadcastState();
-    this.startActionTimer();
   }
 
   private postBlind(player: PlayerState, amount: number) {
@@ -139,7 +136,7 @@ export class PokerEngine {
     if (!player || player.userId !== userId) return false;
     if (!isValidAction(s, userId, action, amount)) return false;
 
-    this.clearActionTimer();
+    const prevBet = s.currentBet;
 
     switch (action) {
       case "fold":
@@ -182,6 +179,16 @@ export class PokerEngine {
       }
     }
 
+    player.hasActed = true;
+    // A genuine raise reopens the action for every other active player
+    if (player.bet > prevBet) {
+      for (const other of s.players) {
+        if (other.userId !== userId && !other.folded && !other.allIn) {
+          other.hasActed = false;
+        }
+      }
+    }
+
     s.pot = s.players.reduce((sum, p) => sum + p.totalBet, 0);
 
     const activePlayers = s.players.filter((p) => !p.folded);
@@ -194,7 +201,6 @@ export class PokerEngine {
       this.advancePhase();
     } else {
       this.moveToNextPlayer();
-      this.startActionTimer();
     }
 
     this.broadcastState();
@@ -206,7 +212,7 @@ export class PokerEngine {
     const n = s.players.length;
     let next = (s.currentPlayerIndex + 1) % n;
     let attempts = 0;
-    while ((s.players[next].folded || s.players[next].allIn) && attempts < n) {
+    while ((s.players[next].folded || s.players[next].allIn || s.players[next].hasActed) && attempts < n) {
       next = (next + 1) % n;
       attempts++;
     }
@@ -218,6 +224,7 @@ export class PokerEngine {
 
     for (const p of s.players) {
       p.bet = 0;
+      p.hasActed = false;
     }
     s.currentBet = 0;
     s.minRaise = s.bigBlind;
@@ -271,13 +278,11 @@ export class PokerEngine {
       attempts++;
     }
     s.currentPlayerIndex = start;
-    this.startActionTimer();
   }
 
   private settleHands() {
     const s = this.state;
     s.phase = "settled";
-    this.clearActionTimer();
 
     const activePlayers = s.players.filter((p) => !p.folded);
 
@@ -348,56 +353,6 @@ export class PokerEngine {
     return getAvailableActions(this.state, userId);
   }
 
-  markDisconnected(userId: string) {
-    const player = this.state.players.find((p) => p.userId === userId);
-    if (!player) return;
-    // If it's their turn, auto-act after 5s
-    const current = this.state.players[this.state.currentPlayerIndex];
-    if (current?.userId === userId) {
-      this.clearActionTimer();
-      this.actionTimer = setTimeout(() => {
-        this.autoAction(userId);
-      }, 5000);
-    }
-  }
-
-  markReconnected(userId: string) {
-    // Cancel any pending auto-action for this player
-    const current = this.state.players[this.state.currentPlayerIndex];
-    if (current?.userId === userId) {
-      this.clearActionTimer();
-      this.startActionTimer();
-    }
-  }
-
-  private autoAction(userId: string) {
-    const s = this.state;
-    const player = s.players.find((p) => p.userId === userId);
-    if (!player) return;
-
-    const toCall = s.currentBet - player.bet;
-    const action = toCall === 0 ? "check" : "fold";
-    this.handleAction(userId, action);
-    this.onTimeout(userId, action);
-  }
-
-  private startActionTimer() {
-    this.clearActionTimer();
-    const current = this.state.players[this.state.currentPlayerIndex];
-    if (!current || current.folded || current.allIn) return;
-
-    this.actionTimer = setTimeout(() => {
-      this.autoAction(current.userId);
-    }, 30_000);
-  }
-
-  private clearActionTimer() {
-    if (this.actionTimer) {
-      clearTimeout(this.actionTimer);
-      this.actionTimer = null;
-    }
-  }
-
   private broadcastState() {
     for (const p of this.state.players) {
       const view = this.getStateForPlayer(p.userId);
@@ -410,6 +365,6 @@ export class PokerEngine {
   }
 
   destroy() {
-    this.clearActionTimer();
+    // No persistent resources to release; kept for interface stability.
   }
 }

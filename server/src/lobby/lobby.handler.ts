@@ -12,17 +12,23 @@ export class LobbyHandler {
 
   async handleMessage(userId: string, username: string, type: string, payload: unknown) {
     switch (type) {
-      case "room:create":
-        await this.handleCreateRoom(userId, username, payload);
-        break;
       case "room:join":
         await this.handleJoinRoom(userId, username, payload);
+        break;
+      case "room:confirm":
+        await this.handleConfirmBuyIn(userId, payload);
         break;
       case "room:leave":
         await this.handleLeaveRoom(userId);
         break;
+      case "room:update-settings":
+        await this.handleUpdateSettings(userId, payload);
+        break;
+      case "room:transfer-host":
+        this.handleTransferHost(userId, payload);
+        break;
       case "room:start":
-        await this.handleStartGame(userId);
+        this.handleStartGame(userId);
         break;
       case "poker:action":
         this.handlePokerAction(userId, payload);
@@ -41,7 +47,7 @@ export class LobbyHandler {
   private handlePokerAction(userId: string, payload: unknown) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
-    const engine = this.engines.get(room.config.id);
+    const engine = this.engines.get(room.id);
     if (!engine) return;
 
     const p = payload as { action: string; amount?: number };
@@ -49,27 +55,22 @@ export class LobbyHandler {
   }
 
   private startEngine(room: Room) {
-    const players = room.seats
-      .filter((s) => s.userId)
-      .map((s) => ({
-        userId: s.userId!,
-        username: s.username!,
-        seatIndex: s.index,
-        chips: s.chips,
-      }));
+    const players = room.confirmedSeats().map((s) => ({
+      userId: s.userId!,
+      username: s.username!,
+      seatIndex: s.index,
+      chips: s.chips,
+    }));
 
     const engine = new PokerEngine(
       players,
-      room.config.smallBlind,
-      room.config.bigBlind,
+      room.settings.smallBlind,
+      room.settings.bigBlind,
       0,
       (type, payload) => this.broadcastEngineMessage(room, type, payload),
-      (timedOutUserId, action) => {
-        room.broadcast(this.gateway, "poker:timeout", { userId: timedOutUserId, autoAction: action });
-      },
     );
 
-    this.engines.set(room.config.id, engine);
+    this.engines.set(room.id, engine);
     engine.startHand();
   }
 
@@ -82,8 +83,7 @@ export class LobbyHandler {
       });
     } else if (type === "poker:hand_result") {
       room.broadcast(this.gateway, "poker:hand_result", payload);
-      // Sync chips back to room seats after hand settles
-      const engine = this.engines.get(room.config.id);
+      const engine = this.engines.get(room.id);
       if (engine) {
         const state = engine.getState();
         for (const p of state.players) {
@@ -91,13 +91,12 @@ export class LobbyHandler {
           if (seat) seat.chips = p.chips;
         }
       }
-      // Auto-start next hand after delay
       setTimeout(() => {
-        const eng = this.engines.get(room.config.id);
+        const eng = this.engines.get(room.id);
         if (eng && room.status === "playing") {
           if (!eng.nextHand()) {
             room.status = "waiting";
-            this.engines.delete(room.config.id);
+            this.engines.delete(room.id);
             eng.destroy();
           }
           room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
@@ -106,52 +105,8 @@ export class LobbyHandler {
     }
   }
 
-  private async handleCreateRoom(userId: string, username: string, payload: unknown) {
-    const p = payload as {
-      maxPlayers?: number;
-      smallBlind?: number;
-      bigBlind?: number;
-      minBuyIn?: number;
-      maxBuyIn?: number;
-    };
-
-    const existing = roomManager.findRoomByPlayer(userId);
-    if (existing) {
-      this.gateway.sendToUser(userId, "room:error", { code: "ALREADY_IN_ROOM", message: "你已在房间中" });
-      return;
-    }
-
-    const maxPlayers = Math.min(Math.max(p?.maxPlayers || 9, 2), 9);
-    const smallBlind = p?.smallBlind || 10;
-    const bigBlind = p?.bigBlind || 20;
-    const minBuyIn = p?.minBuyIn || bigBlind * 10;
-    const maxBuyIn = p?.maxBuyIn || bigBlind * 100;
-
-    const room = roomManager.createRoom({
-      hostId: userId,
-      maxPlayers,
-      smallBlind,
-      bigBlind,
-      minBuyIn,
-      maxBuyIn,
-    });
-
-    try {
-      await deductPoints(userId, minBuyIn);
-    } catch {
-      roomManager.destroyRoom(room.config.id);
-      this.gateway.sendToUser(userId, "room:error", { code: "INSUFFICIENT_POINTS", message: "积分不足" });
-      return;
-    }
-
-    room.addPlayer(userId, username, minBuyIn);
-    this.broadcastLobbyList();
-    this.gateway.sendToUser(userId, "room:state", { room: room.toDetail() });
-    this.sendVoiceToken(userId, username, room.config.id);
-  }
-
   private async handleJoinRoom(userId: string, username: string, payload: unknown) {
-    const p = payload as { roomId?: string; buyIn?: number };
+    const p = payload as { roomId?: string };
 
     const existing = roomManager.findRoomByPlayer(userId);
     if (existing) {
@@ -159,7 +114,7 @@ export class LobbyHandler {
       return;
     }
 
-    const room = roomManager.getRoom(p?.roomId || "");
+    const room = roomManager.getRoom(p?.roomId || "main");
     if (!room) {
       this.gateway.sendToUser(userId, "room:error", { code: "ROOM_NOT_FOUND", message: "房间不存在" });
       return;
@@ -171,30 +126,143 @@ export class LobbyHandler {
     }
 
     if (room.status === "playing") {
-      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中" });
+      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，请稍后再进入" });
       return;
     }
 
-    const buyIn = p?.buyIn || room.config.minBuyIn;
-    if (buyIn < room.config.minBuyIn || buyIn > room.config.maxBuyIn) {
+    room.addPlayer(userId, username);
+    this.broadcastLobbyList();
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendVoiceToken(userId, username, room.id);
+  }
+
+  private async handleConfirmBuyIn(userId: string, payload: unknown) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+
+    const seat = room.findSeatByUserId(userId);
+    if (!seat) return;
+
+    if (room.status === "playing") {
+      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，无法修改带入" });
+      return;
+    }
+
+    const p = payload as { buyIn?: number };
+    const buyIn = p?.buyIn ?? 0;
+    if (buyIn < room.settings.minBuyIn || buyIn > room.settings.maxBuyIn) {
       this.gateway.sendToUser(userId, "room:error", {
         code: "INVALID_BUYIN",
-        message: `带入金额需在 ${room.config.minBuyIn} - ${room.config.maxBuyIn} 之间`,
+        message: `带入金额需在 ${room.settings.minBuyIn} - ${room.settings.maxBuyIn} 之间`,
       });
       return;
     }
 
     try {
-      await deductPoints(userId, buyIn);
+      if (seat.confirmed) {
+        // Adjust already-committed chips to the new buy-in.
+        const net = buyIn - seat.chips;
+        if (net > 0) await deductPoints(userId, net);
+        else if (net < 0) await addPoints(userId, -net);
+      } else {
+        await deductPoints(userId, buyIn);
+      }
     } catch {
       this.gateway.sendToUser(userId, "room:error", { code: "INSUFFICIENT_POINTS", message: "积分不足" });
       return;
     }
 
-    room.addPlayer(userId, username, buyIn);
+    room.confirmBuyIn(userId, buyIn);
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+  }
+
+  private async handleUpdateSettings(userId: string, payload: unknown) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+
+    if (room.hostId !== userId) {
+      this.gateway.sendToUser(userId, "room:error", { code: "NOT_HOST", message: "只有房主可以修改设置" });
+      return;
+    }
+    if (room.status === "playing") {
+      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，无法修改设置" });
+      return;
+    }
+
+    const p = payload as {
+      maxPlayers?: number;
+      smallBlind?: number;
+      bigBlind?: number;
+      minBuyIn?: number;
+      maxBuyIn?: number;
+    };
+
+    const maxPlayers = p.maxPlayers ?? room.settings.maxPlayers;
+    const smallBlind = p.smallBlind ?? room.settings.smallBlind;
+    const bigBlind = p.bigBlind ?? room.settings.bigBlind;
+    const minBuyIn = p.minBuyIn ?? room.settings.minBuyIn;
+    const maxBuyIn = p.maxBuyIn ?? room.settings.maxBuyIn;
+
+    if (maxPlayers < 2 || maxPlayers > 9 || maxPlayers < room.playerCount) {
+      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_SETTINGS", message: "人数设置无效" });
+      return;
+    }
+    if (smallBlind <= 0 || bigBlind <= smallBlind) {
+      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_SETTINGS", message: "盲注设置无效" });
+      return;
+    }
+    if (minBuyIn < bigBlind || maxBuyIn < minBuyIn) {
+      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_SETTINGS", message: "带入范围设置无效" });
+      return;
+    }
+
+    // Changing settings voids every player's committed buy-in; refund them.
+    const refunds = room.clearConfirmations();
+    for (const r of refunds) {
+      await addPoints(r.userId, r.chips);
+    }
+
+    room.settings = { maxPlayers, smallBlind, bigBlind, minBuyIn, maxBuyIn };
     this.broadcastLobbyList();
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
-    this.sendVoiceToken(userId, username, room.config.id);
+  }
+
+  private handleTransferHost(userId: string, payload: unknown) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+
+    if (room.hostId !== userId) {
+      this.gateway.sendToUser(userId, "room:error", { code: "NOT_HOST", message: "只有房主可以移交房主" });
+      return;
+    }
+
+    const p = payload as { targetUserId?: string };
+    if (!p?.targetUserId || !room.transferHost(p.targetUserId)) {
+      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_TARGET", message: "目标玩家不在房间中" });
+      return;
+    }
+
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+  }
+
+  private handleStartGame(userId: string) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+
+    if (room.hostId !== userId) {
+      this.gateway.sendToUser(userId, "room:error", { code: "NOT_HOST", message: "只有房主可以开始游戏" });
+      return;
+    }
+    if (room.status === "playing") return;
+
+    if (room.confirmedCount < 2) {
+      this.gateway.sendToUser(userId, "room:error", { code: "NOT_ENOUGH_PLAYERS", message: "至少需要2名已确认带入的玩家" });
+      return;
+    }
+
+    room.status = "playing";
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.startEngine(room);
   }
 
   private async handleLeaveRoom(userId: string) {
@@ -202,47 +270,41 @@ export class LobbyHandler {
     if (!room) return;
 
     this.gateway.sendToUser(userId, "voice:disconnect", {});
+    await this.ejectPlayer(room, userId);
+  }
+
+  // Removes a player, settling chips and keeping the system room alive.
+  private async ejectPlayer(room: Room, userId: string) {
+    const engine = this.engines.get(room.id);
+    const wasInHand = !!engine && engine.getState().players.some((p) => p.userId === userId);
+
+    if (engine && wasInHand) {
+      this.voidHandToSeats(room, engine);
+    }
+
     const chips = room.removePlayer(userId);
     await addPoints(userId, chips);
 
-    if (room.config.hostId === userId || room.playerCount === 0) {
-      for (const seat of room.seats) {
-        if (seat.userId) {
-          await addPoints(seat.userId, seat.chips);
-          this.gateway.sendToUser(seat.userId, "voice:disconnect", {});
-          this.gateway.sendToUser(seat.userId, "room:state", { room: null, reason: "HOST_LEFT" });
-        }
+    if (engine && wasInHand) {
+      engine.destroy();
+      this.engines.delete(room.id);
+      if (room.confirmedCount >= 2) {
+        this.startEngine(room); // continue with a fresh hand among remaining players
+      } else {
+        room.status = "waiting";
       }
-      const engine = this.engines.get(room.config.id);
-      if (engine) {
-        engine.destroy();
-        this.engines.delete(room.config.id);
-      }
-      roomManager.destroyRoom(room.config.id);
-    } else {
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
     }
 
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
     this.broadcastLobbyList();
   }
 
-  private async handleStartGame(userId: string) {
-    const room = roomManager.findRoomByPlayer(userId);
-    if (!room) return;
-
-    if (room.config.hostId !== userId) {
-      this.gateway.sendToUser(userId, "room:error", { code: "NOT_HOST", message: "只有房主可以开始游戏" });
-      return;
+  private voidHandToSeats(room: Room, engine: PokerEngine) {
+    const state = engine.getState();
+    for (const p of state.players) {
+      const seat = room.findSeatByUserId(p.userId);
+      if (seat) seat.chips = p.chips + p.totalBet; // void the in-progress hand
     }
-
-    if (room.playerCount < 2) {
-      this.gateway.sendToUser(userId, "room:error", { code: "NOT_ENOUGH_PLAYERS", message: "至少需要2名玩家" });
-      return;
-    }
-
-    room.status = "playing";
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
-    this.startEngine(room);
   }
 
   handleDisconnect(userId: string) {
@@ -252,28 +314,12 @@ export class LobbyHandler {
     room.markDisconnected(userId);
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
 
-    // Phase 5 will add 60s timeout and auto-removal
     setTimeout(async () => {
       const currentRoom = roomManager.findRoomByPlayer(userId);
-      if (currentRoom) {
-        const seat = currentRoom.findSeatByUserId(userId);
-        if (seat && !seat.connected) {
-          const chips = currentRoom.removePlayer(userId);
-          await addPoints(userId, chips);
-
-          if (currentRoom.config.hostId === userId || currentRoom.playerCount === 0) {
-            for (const s of currentRoom.seats) {
-              if (s.userId) {
-                await addPoints(s.userId, s.chips);
-                this.gateway.sendToUser(s.userId, "room:state", { room: null, reason: "HOST_LEFT" });
-              }
-            }
-            roomManager.destroyRoom(currentRoom.config.id);
-          } else {
-            currentRoom.broadcast(this.gateway, "room:state", { room: currentRoom.toDetail() });
-          }
-          this.broadcastLobbyList();
-        }
+      if (!currentRoom) return;
+      const seat = currentRoom.findSeatByUserId(userId);
+      if (seat && !seat.connected) {
+        await this.ejectPlayer(currentRoom, userId);
       }
     }, 60_000);
   }
@@ -296,15 +342,15 @@ export class LobbyHandler {
     room.markReconnected(userId);
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
 
-    const engine = this.engines.get(room.config.id);
+    const engine = this.engines.get(room.id);
     if (engine) {
       const state = engine.getStateForPlayer(userId);
       const actions = engine.getAvailableActionsForPlayer(userId);
       this.gateway.sendToUser(userId, "poker:update", { state, availableActions: actions });
     }
 
-    this.sendVoiceToken(userId, username, room.config.id);
-    this.gateway.sendToUser(userId, "reconnect:success", { roomId: room.config.id });
+    this.sendVoiceToken(userId, username, room.id);
+    this.gateway.sendToUser(userId, "reconnect:success", { roomId: room.id });
   }
 
   private async sendVoiceToken(userId: string, username: string, roomId: string) {

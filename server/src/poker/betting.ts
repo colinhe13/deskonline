@@ -54,5 +54,5 @@ export function calculateSidePots(players: PlayerState[]): SidePot[] {
 export function isBettingRoundComplete(players: PlayerState[], currentBet: number): boolean {
   const active = players.filter((p) => !p.folded && !p.allIn);
   if (active.length <= 1) return true;
-  return active.every((p) => p.bet === currentBet);
+  return active.every((p) => p.hasActed && p.bet === currentBet);
 }

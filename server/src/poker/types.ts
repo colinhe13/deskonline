@@ -26,6 +26,7 @@ export interface PlayerState {
   totalBet: number;
   folded: boolean;
   allIn: boolean;
+  hasActed: boolean;
   cards: Card[];
   isDealer: boolean;
   isSmallBlind: boolean;

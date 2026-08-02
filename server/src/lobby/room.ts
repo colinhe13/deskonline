@@ -1,8 +1,8 @@
 import { WebSocketGateway } from "../ws/gateway.js";
 
-export interface RoomConfig {
-  id: string;
-  hostId: string;
+export const MAX_CAPACITY = 9;
+
+export interface RoomSettings {
   maxPlayers: number;
   smallBlind: number;
   bigBlind: number;
@@ -15,24 +15,32 @@ export interface Seat {
   userId: string | null;
   username: string | null;
   chips: number;
+  buyIn: number;
   connected: boolean;
+  confirmed: boolean;
 }
 
 export type RoomStatus = "waiting" | "playing";
 
 export class Room {
-  readonly config: RoomConfig;
+  readonly id: string;
+  hostId: string | null = null;
+  settings: RoomSettings;
   seats: Seat[];
   status: RoomStatus = "waiting";
+  entryOrder: string[] = [];
 
-  constructor(config: RoomConfig) {
-    this.config = config;
-    this.seats = Array.from({ length: config.maxPlayers }, (_, i) => ({
+  constructor(id: string, settings: RoomSettings) {
+    this.id = id;
+    this.settings = settings;
+    this.seats = Array.from({ length: MAX_CAPACITY }, (_, i) => ({
       index: i,
       userId: null,
       username: null,
       chips: 0,
+      buyIn: 0,
       connected: false,
+      confirmed: false,
     }));
   }
 
@@ -40,8 +48,12 @@ export class Room {
     return this.seats.filter((s) => s.userId !== null).length;
   }
 
+  get confirmedCount(): number {
+    return this.seats.filter((s) => s.userId !== null && s.confirmed).length;
+  }
+
   get isFull(): boolean {
-    return this.playerCount >= this.config.maxPlayers;
+    return this.playerCount >= this.settings.maxPlayers;
   }
 
   get connectedUserIds(): string[] {
@@ -52,13 +64,23 @@ export class Room {
     return this.seats.find((s) => s.userId === userId);
   }
 
-  addPlayer(userId: string, username: string, buyIn: number): Seat {
-    const seat = this.seats.find((s) => s.userId === null);
-    if (!seat) throw new Error("ROOM_FULL");
+  confirmedSeats(): Seat[] {
+    return this.seats.filter((s) => s.userId !== null && s.confirmed);
+  }
+
+  addPlayer(userId: string, username: string): Seat {
+    if (this.isFull) throw new Error("ROOM_FULL");
+    const seat = this.seats.find((s) => s.userId === null)!;
     seat.userId = userId;
     seat.username = username;
-    seat.chips = buyIn;
+    seat.chips = 0;
+    seat.buyIn = 0;
     seat.connected = true;
+    seat.confirmed = false;
+    this.entryOrder.push(userId);
+    if (this.hostId === null) {
+      this.hostId = userId;
+    }
     return seat;
   }
 
@@ -69,8 +91,42 @@ export class Room {
     seat.userId = null;
     seat.username = null;
     seat.chips = 0;
+    seat.buyIn = 0;
     seat.connected = false;
+    seat.confirmed = false;
+    this.entryOrder = this.entryOrder.filter((id) => id !== userId);
+    if (this.hostId === userId) {
+      this.hostId = this.entryOrder[0] ?? null;
+    }
     return chips;
+  }
+
+  confirmBuyIn(userId: string, amount: number) {
+    const seat = this.findSeatByUserId(userId);
+    if (!seat) throw new Error("PLAYER_NOT_FOUND");
+    seat.buyIn = amount;
+    seat.chips = amount;
+    seat.confirmed = true;
+  }
+
+  // Resets every confirmed seat; returns the refunds the caller must credit back to points.
+  clearConfirmations(): { userId: string; chips: number }[] {
+    const refunds: { userId: string; chips: number }[] = [];
+    for (const seat of this.seats) {
+      if (seat.userId && seat.confirmed) {
+        refunds.push({ userId: seat.userId, chips: seat.chips });
+        seat.confirmed = false;
+        seat.chips = 0;
+        seat.buyIn = 0;
+      }
+    }
+    return refunds;
+  }
+
+  transferHost(targetUserId: string): boolean {
+    if (!this.findSeatByUserId(targetUserId)) return false;
+    this.hostId = targetUserId;
+    return true;
   }
 
   markDisconnected(userId: string) {
@@ -89,14 +145,15 @@ export class Room {
 
   toSummary() {
     return {
-      id: this.config.id,
-      hostId: this.config.hostId,
+      id: this.id,
+      hostId: this.hostId,
       playerCount: this.playerCount,
-      maxPlayers: this.config.maxPlayers,
-      smallBlind: this.config.smallBlind,
-      bigBlind: this.config.bigBlind,
-      minBuyIn: this.config.minBuyIn,
-      maxBuyIn: this.config.maxBuyIn,
+      confirmedCount: this.confirmedCount,
+      maxPlayers: this.settings.maxPlayers,
+      smallBlind: this.settings.smallBlind,
+      bigBlind: this.settings.bigBlind,
+      minBuyIn: this.settings.minBuyIn,
+      maxBuyIn: this.settings.maxBuyIn,
       status: this.status,
     };
   }
@@ -104,12 +161,14 @@ export class Room {
   toDetail() {
     return {
       ...this.toSummary(),
-      seats: this.seats.map((s) => ({
+      seats: this.seats.slice(0, this.settings.maxPlayers).map((s) => ({
         index: s.index,
         userId: s.userId,
         username: s.username,
         chips: s.chips,
+        buyIn: s.buyIn,
         connected: s.connected,
+        confirmed: s.confirmed,
       })),
     };
   }
