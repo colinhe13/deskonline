@@ -5,14 +5,20 @@ type MessageHandler = (payload: unknown) => void;
 
 export function useWebSocket() {
   const isConnected = ref(false);
+  const isReconnecting = ref(false);
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectAttempts = 0;
+  let intentionalClose = false;
   const handlers = new Map<string, Set<MessageHandler>>();
+
+  const MAX_RECONNECT_DELAY = 15_000;
 
   function connect() {
     const token = localStorage.getItem("token");
     if (!token) return;
 
+    intentionalClose = false;
     const base = import.meta.env.VITE_WS_BASE || import.meta.env.VITE_API_BASE || "";
     const wsUrl = base.replace(/^http/, "ws") + `/ws?token=${token}`;
 
@@ -20,6 +26,11 @@ export function useWebSocket() {
 
     ws.onopen = () => {
       isConnected.value = true;
+      if (reconnectAttempts > 0) {
+        send("reconnect", {});
+      }
+      reconnectAttempts = 0;
+      isReconnecting.value = false;
     };
 
     ws.onmessage = (event) => {
@@ -38,7 +49,7 @@ export function useWebSocket() {
 
     ws.onclose = (event) => {
       isConnected.value = false;
-      if (event.code !== 4001 && event.code !== 1000) {
+      if (!intentionalClose && event.code !== 4001) {
         scheduleReconnect();
       }
     };
@@ -50,17 +61,23 @@ export function useWebSocket() {
 
   function scheduleReconnect() {
     if (reconnectTimer) return;
+    isReconnecting.value = true;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+    reconnectAttempts++;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       connect();
-    }, 3000);
+    }, delay);
   }
 
   function disconnect() {
+    intentionalClose = true;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    reconnectAttempts = 0;
+    isReconnecting.value = false;
     ws?.close(1000);
     ws = null;
     isConnected.value = false;
@@ -83,9 +100,18 @@ export function useWebSocket() {
     handlers.get(type)?.delete(handler);
   }
 
+  function handleVisibilityChange() {
+    if (document.visibilityState === "visible" && !isConnected.value && !intentionalClose) {
+      connect();
+    }
+  }
+
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+
   onUnmounted(() => {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
     disconnect();
   });
 
-  return { isConnected, connect, disconnect, send, onMessage, offMessage };
+  return { isConnected, isReconnecting, connect, disconnect, send, onMessage, offMessage };
 }
