@@ -27,6 +27,9 @@ export class LobbyHandler {
       case "poker:action":
         this.handlePokerAction(userId, payload);
         break;
+      case "reconnect":
+        this.handleReconnect(userId, username);
+        break;
       default:
         break;
     }
@@ -274,6 +277,27 @@ export class LobbyHandler {
 
   broadcastLobbyList() {
     this.gateway.broadcastAll("room:list", { rooms: roomManager.listRooms() });
+  }
+
+  private handleReconnect(userId: string, username: string) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) {
+      this.gateway.sendToUser(userId, "reconnect:failed", { reason: "NO_ACTIVE_ROOM" });
+      return;
+    }
+
+    room.markReconnected(userId);
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+
+    const engine = this.engines.get(room.config.id);
+    if (engine) {
+      const state = engine.getStateForPlayer(userId);
+      const actions = engine.getAvailableActionsForPlayer(userId);
+      this.gateway.sendToUser(userId, "poker:update", { state, availableActions: actions });
+    }
+
+    this.sendVoiceToken(userId, username, room.config.id);
+    this.gateway.sendToUser(userId, "reconnect:success", { roomId: room.config.id });
   }
 
   private async sendVoiceToken(userId: string, username: string, roomId: string) {
