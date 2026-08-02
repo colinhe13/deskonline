@@ -6,9 +6,11 @@
 import { onMounted, onUnmounted } from "vue";
 import { useWebSocket } from "./composables/useWebSocket";
 import { useVoice } from "./composables/useVoice";
+import { useAuthStore } from "./stores/auth";
 
 const ws = useWebSocket();
 const voice = useVoice();
+const auth = useAuthStore();
 
 function handleVoiceToken(payload: unknown) {
   const p = payload as { token: string; url: string };
@@ -22,6 +24,7 @@ function handleVoiceDisconnect() {
 onMounted(() => {
   if (localStorage.getItem("token")) {
     ws.connect();
+    auth.fetchMe();
   }
   ws.onMessage("voice:token", handleVoiceToken);
   ws.onMessage("voice:disconnect", handleVoiceDisconnect);

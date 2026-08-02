@@ -64,6 +64,7 @@ function onRoomCreated() {
 onMounted(() => {
   onMessage("room:list", handleRoomList);
   onMessage("room:state", handleRoomState);
+  send("room:list:request", {});
 });
 
 onUnmounted(() => {

@@ -35,6 +35,15 @@ export const useAuthStore = defineStore("auth", () => {
     router.push("/lobby");
   }
 
+  async function fetchMe() {
+    try {
+      const res = await http.get("/api/auth/me");
+      user.value = res.data.user;
+    } catch {
+      logout();
+    }
+  }
+
   function logout() {
     useVoice().disconnect();
     useWebSocket().disconnect();
@@ -44,5 +53,5 @@ export const useAuthStore = defineStore("auth", () => {
     router.push("/login");
   }
 
-  return { token, user, isAuthenticated, login, register, logout };
+  return { token, user, isAuthenticated, login, register, logout, fetchMe };
 });
