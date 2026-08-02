@@ -1,12 +1,12 @@
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal">
-      <h2>创建房间</h2>
-      <form @submit.prevent="create">
+      <h2>房间设置</h2>
+      <form @submit.prevent="save">
         <label>
           最大人数
           <select v-model.number="form.maxPlayers">
-            <option v-for="n in [2,3,4,5,6,7,8,9]" :key="n" :value="n">{{ n }}</option>
+            <option v-for="n in [2, 3, 4, 5, 6, 7, 8, 9]" :key="n" :value="n">{{ n }}</option>
           </select>
         </label>
         <label>
@@ -25,9 +25,10 @@
           最大带入
           <input v-model.number="form.maxBuyIn" type="number" min="1" />
         </label>
+        <p class="hint">修改设置后，所有玩家需要重新确认带入金额。</p>
         <div class="modal-actions">
           <button type="button" @click="$emit('close')">取消</button>
-          <button type="submit">创建</button>
+          <button type="submit">保存</button>
         </div>
       </form>
     </div>
@@ -36,22 +37,22 @@
 
 <script setup lang="ts">
 import { reactive } from "vue";
-import { useWebSocket } from "../../composables/useWebSocket";
 
-const { send } = useWebSocket();
-const emit = defineEmits<{ close: []; created: [] }>();
+export interface SettingsForm {
+  maxPlayers: number;
+  smallBlind: number;
+  bigBlind: number;
+  minBuyIn: number;
+  maxBuyIn: number;
+}
 
-const form = reactive({
-  maxPlayers: 9,
-  smallBlind: 10,
-  bigBlind: 20,
-  minBuyIn: 200,
-  maxBuyIn: 2000,
-});
+const props = defineProps<{ settings: SettingsForm }>();
+const emit = defineEmits<{ close: []; save: [form: SettingsForm] }>();
 
-function create() {
-  send("room:create", { ...form });
-  emit("created");
+const form = reactive<SettingsForm>({ ...props.settings });
+
+function save() {
+  emit("save", { ...form });
 }
 </script>
 
@@ -91,6 +92,11 @@ function create() {
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 1rem;
+}
+.hint {
+  font-size: 0.75rem;
+  color: #999;
+  margin: 0.5rem 0;
 }
 .modal-actions {
   display: flex;

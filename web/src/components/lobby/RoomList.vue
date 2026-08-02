@@ -1,10 +1,11 @@
 <template>
   <div class="room-list">
-    <p v-if="rooms.length === 0" class="empty">暂无房间，创建一个开始游戏吧</p>
+    <p v-if="rooms.length === 0" class="empty">暂无可用房间</p>
     <div v-for="room in rooms" :key="room.id" class="room-card" @click="$emit('join', room)">
       <div class="room-id">#{{ room.id }}</div>
       <div class="room-info">
         <span>{{ room.playerCount }}/{{ room.maxPlayers }} 人</span>
+        <span>已确认 {{ room.confirmedCount }}</span>
         <span>盲注 {{ room.smallBlind }}/{{ room.bigBlind }}</span>
         <span>带入 {{ room.minBuyIn }}-{{ room.maxBuyIn }}</span>
       </div>

@@ -25,6 +25,7 @@
         <span class="seat-chips">{{ seat.chips }}</span>
       </div>
       <div v-if="seat.bet > 0" class="seat-bet">{{ seat.bet }}</div>
+      <div v-if="!seat.confirmed" class="unconfirmed-badge">待确认</div>
       <div v-if="seat.folded" class="fold-badge">弃牌</div>
       <div v-if="seat.allIn" class="allin-badge">ALL IN</div>
       <div v-if="!seat.connected" class="dc-badge">断线</div>
@@ -43,7 +44,9 @@ interface SeatView {
   userId: string | null;
   username: string | null;
   chips: number;
+  buyIn: number;
   connected: boolean;
+  confirmed: boolean;
   bet: number;
   folded: boolean;
   allIn: boolean;
@@ -152,7 +155,8 @@ defineProps<{ seat: SeatView; isHost: boolean; isMe: boolean; isCurrent: boolean
 }
 .fold-badge,
 .allin-badge,
-.dc-badge {
+.dc-badge,
+.unconfirmed-badge {
   font-size: 0.6rem;
   padding: 0 4px;
   border-radius: 3px;
@@ -160,6 +164,9 @@ defineProps<{ seat: SeatView; isHost: boolean; isMe: boolean; isCurrent: boolean
 }
 .fold-badge {
   background: #718096;
+}
+.unconfirmed-badge {
+  background: #a0aec0;
 }
 .allin-badge {
   background: #805ad5;

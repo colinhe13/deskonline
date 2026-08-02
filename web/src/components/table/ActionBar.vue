@@ -1,8 +1,5 @@
 <template>
   <div class="action-bar" v-if="actions.length > 0">
-    <div class="timer" v-if="timeLeft > 0">
-      <div class="timer-fill" :style="{ width: (timeLeft / 30) * 100 + '%' }"></div>
-    </div>
     <div class="actions">
       <button
         v-for="action in actions"
@@ -37,7 +34,7 @@ interface ActionOption {
   max?: number;
 }
 
-const props = defineProps<{ actions: ActionOption[]; timeLeft: number }>();
+const props = defineProps<{ actions: ActionOption[] }>();
 const emit = defineEmits<{ action: [type: string, amount?: number] }>();
 
 const showRaiseSlider = ref(false);
@@ -84,17 +81,6 @@ function confirmRaise() {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-}
-.timer {
-  height: 4px;
-  background: #333;
-  border-radius: 2px;
-  overflow: hidden;
-}
-.timer-fill {
-  height: 100%;
-  background: #ffd700;
-  transition: width 1s linear;
 }
 .actions {
   display: flex;

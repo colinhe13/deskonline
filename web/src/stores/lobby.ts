@@ -3,8 +3,9 @@ import { ref } from "vue";
 
 export interface RoomSummary {
   id: string;
-  hostId: string;
+  hostId: string | null;
   playerCount: number;
+  confirmedCount: number;
   maxPlayers: number;
   smallBlind: number;
   bigBlind: number;

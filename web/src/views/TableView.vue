@@ -5,20 +5,44 @@
       <span>房间 #{{ game.room?.id }}</span>
       <div class="header-right">
         <VoicePanel />
-        <button v-if="isHost && game.room?.status === 'waiting'" @click="startGame">
-          开始游戏
-        </button>
+        <template v-if="isHost && game.room?.status === 'waiting'">
+          <button @click="showSettings = true">设置</button>
+          <button @click="showTransfer = true">移交房主</button>
+          <button class="start-btn" :disabled="!canStart" @click="startGame">开始游戏</button>
+        </template>
       </div>
     </header>
+
+    <p v-if="game.room?.status === 'waiting' && !canStart && isHost" class="start-hint">
+      至少需要 2 名玩家确认带入后才能开始（已确认 {{ game.room?.confirmedCount ?? 0 }}）
+    </p>
+
     <main class="table-main">
       <PokerTable :room="game.room" :poker-state="game.pokerState" :my-user-id="game.myUserId" />
     </main>
 
-    <ActionBar
-      v-if="game.isMyTurn"
-      :actions="game.availableActions"
-      :time-left="timeLeft"
-      @action="handleAction"
+    <ActionBar v-if="game.isMyTurn" :actions="game.availableActions" @action="handleAction" />
+
+    <ConfirmBuyIn
+      v-if="needConfirmBuyIn"
+      :min-buy-in="game.room!.minBuyIn"
+      :max-buy-in="game.room!.maxBuyIn"
+      @confirm="confirmBuyIn"
+    />
+
+    <RoomSettingsModal
+      v-if="showSettings"
+      :settings="settingsForm"
+      @close="showSettings = false"
+      @save="saveSettings"
+    />
+
+    <TransferHostModal
+      v-if="showTransfer"
+      :seats="game.room?.seats ?? []"
+      :my-user-id="game.myUserId"
+      @close="showTransfer = false"
+      @transfer="transferHost"
     />
 
     <div v-if="game.handResult" class="hand-result-overlay">
@@ -31,6 +55,7 @@
       </div>
     </div>
 
+    <div v-if="errorMsg" class="error-toast">{{ errorMsg }}</div>
     <div v-if="reconnecting" class="reconnect-overlay">正在重新连接...</div>
   </div>
 </template>
@@ -44,6 +69,9 @@ import { useWebSocket } from "../composables/useWebSocket";
 import PokerTable from "../components/table/PokerTable.vue";
 import ActionBar from "../components/table/ActionBar.vue";
 import VoicePanel from "../components/voice/VoicePanel.vue";
+import ConfirmBuyIn from "../components/table/ConfirmBuyIn.vue";
+import RoomSettingsModal from "../components/table/RoomSettingsModal.vue";
+import TransferHostModal from "../components/table/TransferHostModal.vue";
 import type { RoomDetail, PokerState, ActionOption, HandResultInfo } from "../stores/game";
 
 const auth = useAuthStore();
@@ -51,10 +79,31 @@ const game = useGameStore();
 const router = useRouter();
 const { isReconnecting: reconnecting, send, onMessage, offMessage } = useWebSocket();
 
-const timeLeft = ref(30);
-let turnTimer: ReturnType<typeof setInterval> | null = null;
+const showSettings = ref(false);
+const showTransfer = ref(false);
+const errorMsg = ref("");
+let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
-const isHost = computed(() => game.room?.hostId === auth.user?.id);
+const isHost = computed(() => game.room?.hostId != null && game.room.hostId === game.myUserId);
+const mySeat = computed(() => game.room?.seats.find((s) => s.userId === game.myUserId));
+const canStart = computed(() => (game.room?.confirmedCount ?? 0) >= 2);
+const needConfirmBuyIn = computed(
+  () => game.room?.status === "waiting" && mySeat.value && !mySeat.value.confirmed,
+);
+
+const settingsForm = computed(() => ({
+  maxPlayers: game.room?.maxPlayers ?? 9,
+  smallBlind: game.room?.smallBlind ?? 10,
+  bigBlind: game.room?.bigBlind ?? 20,
+  minBuyIn: game.room?.minBuyIn ?? 200,
+  maxBuyIn: game.room?.maxBuyIn ?? 2000,
+}));
+
+function showError(message: string) {
+  errorMsg.value = message;
+  if (errorTimer) clearTimeout(errorTimer);
+  errorTimer = setTimeout(() => (errorMsg.value = ""), 3000);
+}
 
 function handleRoomState(payload: unknown) {
   const p = payload as { room: RoomDetail | null; reason?: string };
@@ -70,33 +119,16 @@ function handlePokerUpdate(payload: unknown) {
   const p = payload as { state: PokerState; availableActions: ActionOption[] };
   game.setPokerState(p.state, p.availableActions);
   game.setHandResult(null);
-
-  if (p.availableActions.length > 0) {
-    startTurnTimer();
-  } else {
-    stopTurnTimer();
-  }
 }
 
 function handleHandResult(payload: unknown) {
   game.setHandResult(payload as HandResultInfo);
-  stopTurnTimer();
   setTimeout(() => game.setHandResult(null), 4000);
 }
 
-function startTurnTimer() {
-  stopTurnTimer();
-  timeLeft.value = 30;
-  turnTimer = setInterval(() => {
-    timeLeft.value = Math.max(0, timeLeft.value - 1);
-  }, 1000);
-}
-
-function stopTurnTimer() {
-  if (turnTimer) {
-    clearInterval(turnTimer);
-    turnTimer = null;
-  }
+function handleRoomError(payload: unknown) {
+  const p = payload as { message?: string };
+  showError(p.message || "操作失败");
 }
 
 function winnerName(userId: string): string {
@@ -106,7 +138,26 @@ function winnerName(userId: string): string {
 
 function handleAction(type: string, amount?: number) {
   send("poker:action", { action: type, amount });
-  stopTurnTimer();
+}
+
+function confirmBuyIn(amount: number) {
+  send("room:confirm", { buyIn: amount });
+}
+
+function saveSettings(form: {
+  maxPlayers: number;
+  smallBlind: number;
+  bigBlind: number;
+  minBuyIn: number;
+  maxBuyIn: number;
+}) {
+  send("room:update-settings", form);
+  showSettings.value = false;
+}
+
+function transferHost(targetUserId: string) {
+  send("room:transfer-host", { targetUserId });
+  showTransfer.value = false;
 }
 
 function leaveRoom() {
@@ -124,13 +175,15 @@ onMounted(() => {
   onMessage("room:state", handleRoomState);
   onMessage("poker:update", handlePokerUpdate);
   onMessage("poker:hand_result", handleHandResult);
+  onMessage("room:error", handleRoomError);
 });
 
 onUnmounted(() => {
-  stopTurnTimer();
+  if (errorTimer) clearTimeout(errorTimer);
   offMessage("room:state", handleRoomState);
   offMessage("poker:update", handlePokerUpdate);
   offMessage("poker:hand_result", handleHandResult);
+  offMessage("room:error", handleRoomError);
 });
 </script>
 
@@ -157,10 +210,23 @@ onUnmounted(() => {
   border-radius: 4px;
   cursor: pointer;
 }
+.start-btn {
+  background: #d69e2e !important;
+}
+.start-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .header-right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+}
+.start-hint {
+  text-align: center;
+  color: #fbd38d;
+  font-size: 0.8rem;
+  padding: 0 1rem;
 }
 .table-main {
   flex: 1;
@@ -200,6 +266,18 @@ onUnmounted(() => {
 .winner-amount {
   color: #d69e2e;
   font-weight: bold;
+}
+.error-toast {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #e53e3e;
+  color: #fff;
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  z-index: 70;
+  font-size: 0.85rem;
 }
 .reconnect-overlay {
   position: fixed;

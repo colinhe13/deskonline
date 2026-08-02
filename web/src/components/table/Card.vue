@@ -1,8 +1,8 @@
 <template>
-  <div class="card" :class="{ 'card-back': !visible }">
+  <div class="card" :class="{ 'card-back': !visible }" :style="cardStyle">
     <template v-if="visible && card">
-      <span class="card-rank" :style="{ color: suitColor }">{{ card.rank }}</span>
-      <span class="card-suit" :style="{ color: suitColor }">{{ suitSymbol }}</span>
+      <span class="card-rank">{{ card.rank }}</span>
+      <span class="card-suit">{{ suitSymbol }}</span>
     </template>
     <template v-else>
       <span class="card-pattern">🂠</span>
@@ -20,7 +20,12 @@ const props = defineProps<{
 }>();
 
 const suitSymbol = computed(() => (props.card ? SUIT_SYMBOLS[props.card.suit] : ""));
-const suitColor = computed(() => (props.card ? SUIT_COLORS[props.card.suit] : "#333"));
+const cardStyle = computed(() => {
+  if (props.visible && props.card) {
+    return { backgroundColor: SUIT_COLORS[props.card.suit] };
+  }
+  return {};
+});
 </script>
 
 <style scoped>
@@ -29,13 +34,14 @@ const suitColor = computed(() => (props.card ? SUIT_COLORS[props.card.suit] : "#
   height: 56px;
   background: #fff;
   border-radius: 4px;
-  border: 1px solid #ccc;
+  border: 1px solid rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .card-back {
   background: #2b5797;

@@ -6,13 +6,16 @@ export interface SeatInfo {
   userId: string | null;
   username: string | null;
   chips: number;
+  buyIn: number;
   connected: boolean;
+  confirmed: boolean;
 }
 
 export interface RoomDetail {
   id: string;
-  hostId: string;
+  hostId: string | null;
   playerCount: number;
+  confirmedCount: number;
   maxPlayers: number;
   smallBlind: number;
   bigBlind: number;

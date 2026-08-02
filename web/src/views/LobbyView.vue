@@ -8,24 +8,19 @@
       </div>
     </header>
     <main class="lobby-content">
-      <div class="lobby-actions">
-        <button class="btn-create" @click="showCreateModal = true">创建房间</button>
-      </div>
-      <RoomList :rooms="lobby.rooms" @join="openJoinPrompt" />
+      <RoomList :rooms="lobby.rooms" @join="joinRoom" />
     </main>
-    <CreateRoomModal v-if="showCreateModal" @close="showCreateModal = false" @created="onRoomCreated" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useLobbyStore } from "../stores/lobby";
 import { useGameStore } from "../stores/game";
 import { useWebSocket } from "../composables/useWebSocket";
 import RoomList from "../components/lobby/RoomList.vue";
-import CreateRoomModal from "../components/lobby/CreateRoomModal.vue";
 import type { RoomSummary } from "../stores/lobby";
 import type { RoomDetail } from "../stores/game";
 
@@ -34,8 +29,6 @@ const lobby = useLobbyStore();
 const game = useGameStore();
 const router = useRouter();
 const { send, onMessage, offMessage } = useWebSocket();
-
-const showCreateModal = ref(false);
 
 function handleRoomList(payload: unknown) {
   const p = payload as { rooms: RoomSummary[] };
@@ -51,14 +44,8 @@ function handleRoomState(payload: unknown) {
   }
 }
 
-function openJoinPrompt(room: RoomSummary) {
-  const buyIn = prompt(`带入筹码（${room.minBuyIn} - ${room.maxBuyIn}）：`, String(room.minBuyIn));
-  if (buyIn === null) return;
-  send("room:join", { roomId: room.id, buyIn: parseInt(buyIn, 10) });
-}
-
-function onRoomCreated() {
-  showCreateModal.value = false;
+function joinRoom(room: RoomSummary) {
+  send("room:join", { roomId: room.id });
 }
 
 onMounted(() => {
@@ -108,17 +95,5 @@ onUnmounted(() => {
   padding: 1.5rem 2rem;
   max-width: 800px;
   margin: 0 auto;
-}
-.lobby-actions {
-  margin-bottom: 1rem;
-}
-.btn-create {
-  padding: 0.6rem 1.2rem;
-  background: #1a472a;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 1rem;
-  cursor: pointer;
 }
 </style>
