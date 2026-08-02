@@ -4,7 +4,7 @@
       <button @click="leaveRoom">离开</button>
       <span>房间 #{{ game.room?.id }}</span>
       <div class="header-right">
-        <VoicePanel />
+        <VoicePanel v-if="VOICE_ENABLED" />
         <template v-if="isHost && game.room?.status === 'waiting'">
           <button @click="showSettings = true">设置</button>
           <button @click="showTransfer = true">移交房主</button>
@@ -66,6 +66,7 @@ import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useGameStore } from "../stores/game";
 import { useWebSocket } from "../composables/useWebSocket";
+import { VOICE_ENABLED } from "../utils/featureFlags";
 import PokerTable from "../components/table/PokerTable.vue";
 import ActionBar from "../components/table/ActionBar.vue";
 import VoicePanel from "../components/voice/VoicePanel.vue";

@@ -7,6 +7,7 @@ import { onMounted, onUnmounted } from "vue";
 import { useWebSocket } from "./composables/useWebSocket";
 import { useVoice } from "./composables/useVoice";
 import { useAuthStore } from "./stores/auth";
+import { VOICE_ENABLED } from "./utils/featureFlags";
 
 const ws = useWebSocket();
 const voice = useVoice();
@@ -26,13 +27,17 @@ onMounted(() => {
     ws.connect();
     auth.fetchMe();
   }
-  ws.onMessage("voice:token", handleVoiceToken);
-  ws.onMessage("voice:disconnect", handleVoiceDisconnect);
+  if (VOICE_ENABLED) {
+    ws.onMessage("voice:token", handleVoiceToken);
+    ws.onMessage("voice:disconnect", handleVoiceDisconnect);
+  }
 });
 
 onUnmounted(() => {
-  ws.offMessage("voice:token", handleVoiceToken);
-  ws.offMessage("voice:disconnect", handleVoiceDisconnect);
+  if (VOICE_ENABLED) {
+    ws.offMessage("voice:token", handleVoiceToken);
+    ws.offMessage("voice:disconnect", handleVoiceDisconnect);
+  }
 });
 </script>
 
