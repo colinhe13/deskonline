@@ -3,26 +3,83 @@
     <header class="lobby-header">
       <h1>大厅</h1>
       <div class="user-info">
-        <span>{{ auth.user?.username }}</span>
+        <span>{{ auth.user?.username }} | {{ auth.user?.points }} 分</span>
         <button @click="auth.logout()">退出</button>
       </div>
     </header>
     <main class="lobby-content">
-      <p class="placeholder">房间列表（Phase 2 实现）</p>
+      <div class="lobby-actions">
+        <button class="btn-create" @click="showCreateModal = true">创建房间</button>
+      </div>
+      <RoomList :rooms="lobby.rooms" @join="openJoinPrompt" />
     </main>
+    <CreateRoomModal v-if="showCreateModal" @close="showCreateModal = false" @created="onRoomCreated" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { useLobbyStore } from "../stores/lobby";
+import { useGameStore } from "../stores/game";
+import { useWebSocket } from "../composables/useWebSocket";
+import RoomList from "../components/lobby/RoomList.vue";
+import CreateRoomModal from "../components/lobby/CreateRoomModal.vue";
+import type { RoomSummary } from "../stores/lobby";
+import type { RoomDetail } from "../stores/game";
 
 const auth = useAuthStore();
+const lobby = useLobbyStore();
+const game = useGameStore();
+const router = useRouter();
+const { connect, disconnect, send, onMessage, offMessage } = useWebSocket();
+
+const showCreateModal = ref(false);
+
+function handleRoomList(payload: unknown) {
+  const p = payload as { rooms: RoomSummary[] };
+  lobby.updateRooms(p.rooms);
+}
+
+function handleRoomState(payload: unknown) {
+  const p = payload as { room: RoomDetail | null; reason?: string };
+  if (p.room) {
+    game.setRoom(p.room);
+    router.push(`/table/${p.room.id}`);
+  } else {
+    game.setRoom(null);
+    router.push("/lobby");
+  }
+}
+
+function openJoinPrompt(room: RoomSummary) {
+  const buyIn = prompt(`带入筹码（${room.minBuyIn} - ${room.maxBuyIn}）：`, String(room.minBuyIn));
+  if (buyIn === null) return;
+  send("room:join", { roomId: room.id, buyIn: parseInt(buyIn, 10) });
+}
+
+function onRoomCreated() {
+  showCreateModal.value = false;
+}
+
+onMounted(() => {
+  connect();
+  onMessage("room:list", handleRoomList);
+  onMessage("room:state", handleRoomState);
+});
+
+onUnmounted(() => {
+  offMessage("room:list", handleRoomList);
+  offMessage("room:state", handleRoomState);
+  disconnect();
+});
 </script>
 
 <style scoped>
 .lobby-page {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: #f0f4f0;
 }
 .lobby-header {
   display: flex;
@@ -40,6 +97,7 @@ const auth = useAuthStore();
   display: flex;
   align-items: center;
   gap: 1rem;
+  font-size: 0.9rem;
 }
 .user-info button {
   padding: 0.4rem 0.8rem;
@@ -50,10 +108,20 @@ const auth = useAuthStore();
   cursor: pointer;
 }
 .lobby-content {
-  padding: 2rem;
+  padding: 1.5rem 2rem;
+  max-width: 800px;
+  margin: 0 auto;
 }
-.placeholder {
-  color: #999;
-  text-align: center;
+.lobby-actions {
+  margin-bottom: 1rem;
+}
+.btn-create {
+  padding: 0.6rem 1.2rem;
+  background: #1a472a;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
 }
 </style>
