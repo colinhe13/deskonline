@@ -1,0 +1,15 @@
+port: 7880
+bind_addresses:
+  - ""
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50040
+  use_external_ip: true
+keys:
+  <LIVEKIT_API_KEY>: <LIVEKIT_API_SECRET>
+logging:
+  level: info
+room:
+  auto_create: false
+  empty_timeout: 300
