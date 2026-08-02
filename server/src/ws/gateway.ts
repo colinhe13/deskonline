@@ -75,7 +75,7 @@ export class WebSocketGateway {
   private handleMessage(userId: string, type: string, payload: unknown) {
     const client = this.clients.get(userId);
     if (!client) return;
-    if (type.startsWith("room:")) {
+    if (type.startsWith("room:") || type.startsWith("poker:")) {
       this.lobbyHandler.handleMessage(userId, client.user.username, type, payload);
     }
   }

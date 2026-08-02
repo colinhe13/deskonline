@@ -1,8 +1,12 @@
 import { WebSocketGateway } from "../ws/gateway.js";
 import { roomManager } from "./room.manager.js";
 import { deductPoints, addPoints } from "../points/points.service.js";
+import { PokerEngine } from "../poker/engine.js";
+import { Room } from "./room.js";
 
 export class LobbyHandler {
+  private engines: Map<string, PokerEngine> = new Map();
+
   constructor(private gateway: WebSocketGateway) {}
 
   async handleMessage(userId: string, username: string, type: string, payload: unknown) {
@@ -19,8 +23,79 @@ export class LobbyHandler {
       case "room:start":
         await this.handleStartGame(userId);
         break;
+      case "poker:action":
+        this.handlePokerAction(userId, payload);
+        break;
       default:
         break;
+    }
+  }
+
+  private handlePokerAction(userId: string, payload: unknown) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+    const engine = this.engines.get(room.config.id);
+    if (!engine) return;
+
+    const p = payload as { action: string; amount?: number };
+    engine.handleAction(userId, p.action, p.amount);
+  }
+
+  private startEngine(room: Room) {
+    const players = room.seats
+      .filter((s) => s.userId)
+      .map((s) => ({
+        userId: s.userId!,
+        username: s.username!,
+        seatIndex: s.index,
+        chips: s.chips,
+      }));
+
+    const engine = new PokerEngine(
+      players,
+      room.config.smallBlind,
+      room.config.bigBlind,
+      0,
+      (type, payload) => this.broadcastEngineMessage(room, type, payload),
+      (timedOutUserId, action) => {
+        room.broadcast(this.gateway, "poker:timeout", { userId: timedOutUserId, autoAction: action });
+      },
+    );
+
+    this.engines.set(room.config.id, engine);
+    engine.startHand();
+  }
+
+  private broadcastEngineMessage(room: Room, type: string, payload: unknown) {
+    if (type === "poker:update") {
+      const p = payload as { targetUserId: string; state: unknown; availableActions: unknown };
+      this.gateway.sendToUser(p.targetUserId, "poker:update", {
+        state: p.state,
+        availableActions: p.availableActions,
+      });
+    } else if (type === "poker:hand_result") {
+      room.broadcast(this.gateway, "poker:hand_result", payload);
+      // Sync chips back to room seats after hand settles
+      const engine = this.engines.get(room.config.id);
+      if (engine) {
+        const state = engine.getState();
+        for (const p of state.players) {
+          const seat = room.findSeatByUserId(p.userId);
+          if (seat) seat.chips = p.chips;
+        }
+      }
+      // Auto-start next hand after delay
+      setTimeout(() => {
+        const eng = this.engines.get(room.config.id);
+        if (eng && room.status === "playing") {
+          if (!eng.nextHand()) {
+            room.status = "waiting";
+            this.engines.delete(room.config.id);
+            eng.destroy();
+          }
+          room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+        }
+      }, 5000);
     }
   }
 
@@ -151,7 +226,7 @@ export class LobbyHandler {
 
     room.status = "playing";
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
-    // Phase 3: PokerEngine will be started here
+    this.startEngine(room);
   }
 
   handleDisconnect(userId: string) {
