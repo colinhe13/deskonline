@@ -118,3 +118,46 @@ function combinations(cards: Card[], k: number): Card[][] {
   helper(0, []);
   return result;
 }
+
+export function rankDisplayName(value: number): string {
+  switch (value) {
+    case 14:
+      return "A";
+    case 13:
+      return "K";
+    case 12:
+      return "Q";
+    case 11:
+      return "J";
+    default:
+      return String(value);
+  }
+}
+
+export function describeHand(hand: HandResult): string {
+  const k = hand.kickers;
+  switch (hand.rank) {
+    case HandRank.RoyalFlush:
+      return "皇家同花顺";
+    case HandRank.StraightFlush:
+      return "同花顺";
+    case HandRank.FourOfAKind:
+      return `四条 ${rankDisplayName(k[0])}`;
+    case HandRank.FullHouse:
+      return `葫芦 ${rankDisplayName(k[0])} 带 ${rankDisplayName(k[1])}`;
+    case HandRank.Flush:
+      return "同花";
+    case HandRank.Straight:
+      return "顺子";
+    case HandRank.ThreeOfAKind:
+      return `三条 ${rankDisplayName(k[0])}`;
+    case HandRank.TwoPair:
+      return `两对 ${rankDisplayName(k[0])} 和 ${rankDisplayName(k[1])}`;
+    case HandRank.OnePair:
+      return `一对 ${rankDisplayName(k[0])}`;
+    case HandRank.HighCard:
+      return `高牌 ${rankDisplayName(k[0])}`;
+    default:
+      return "";
+  }
+}

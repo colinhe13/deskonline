@@ -27,6 +27,9 @@ export class LobbyHandler {
       case "room:transfer-host":
         this.handleTransferHost(userId, payload);
         break;
+      case "room:move-seat":
+        this.handleMoveSeat(userId, payload);
+        break;
       case "room:start":
         this.handleStartGame(userId);
         break;
@@ -239,6 +242,26 @@ export class LobbyHandler {
     const p = payload as { targetUserId?: string };
     if (!p?.targetUserId || !room.transferHost(p.targetUserId)) {
       this.gateway.sendToUser(userId, "room:error", { code: "INVALID_TARGET", message: "目标玩家不在房间中" });
+      return;
+    }
+
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+  }
+
+  private handleMoveSeat(userId: string, payload: unknown) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+
+    if (room.status === "playing") {
+      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，无法换座" });
+      return;
+    }
+
+    const p = payload as { seatIndex?: number };
+    if (typeof p?.seatIndex !== "number") return;
+
+    if (!room.moveSeat(userId, p.seatIndex)) {
+      this.gateway.sendToUser(userId, "room:error", { code: "SEAT_TAKEN", message: "该座位已被占用" });
       return;
     }
 

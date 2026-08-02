@@ -101,6 +101,32 @@ describe("Room system model", () => {
     expect(room.findSeatByUserId("u1")).toBeUndefined();
   });
 
+  it("moveSeat transfers a player to an empty seat with their state", () => {
+    const room = makeRoom();
+    room.addPlayer("u1", "P1");
+    room.confirmBuyIn("u1", 500);
+    const originalIndex = room.findSeatByUserId("u1")!.index;
+    const targetIndex = (originalIndex + 1) % 9;
+
+    expect(room.moveSeat("u1", targetIndex)).toBe(true);
+    const seat = room.findSeatByUserId("u1")!;
+    expect(seat.index).toBe(targetIndex);
+    expect(seat.chips).toBe(500);
+    expect(seat.confirmed).toBe(true);
+    expect(room.seats[originalIndex].userId).toBeNull();
+  });
+
+  it("moveSeat rejects occupied seats and invalid indices", () => {
+    const room = makeRoom();
+    room.addPlayer("u1", "P1");
+    room.addPlayer("u2", "P2");
+    const u2Index = room.findSeatByUserId("u2")!.index;
+
+    expect(room.moveSeat("u1", u2Index)).toBe(false);
+    expect(room.moveSeat("u1", 99)).toBe(false);
+    expect(room.findSeatByUserId("u1")).toBeDefined();
+  });
+
   it("isFull respects maxPlayers", () => {
     const room = makeRoom(2);
     room.addPlayer("u1", "P1");

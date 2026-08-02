@@ -1,12 +1,14 @@
-import { GameState, PlayerState, Card } from "./types.js";
+import { GameState, PlayerState, Card, HandResult as EvaluatedHand } from "./types.js";
 import { createDeck, shuffle, deal } from "./deck.js";
-import { evaluateHand, compareHands } from "./evaluator.js";
+import { evaluateHand, compareHands, describeHand } from "./evaluator.js";
 import { calculateSidePots, isBettingRoundComplete } from "./betting.js";
 import { getAvailableActions, isValidAction } from "./actions.js";
 
 export interface HandResult {
   winners: { userId: string; amount: number }[];
   showdownCards: Record<string, Card[]>;
+  handNames: Record<string, string>;
+  reason: "fold" | "showdown";
 }
 
 export class PokerEngine {
@@ -292,6 +294,8 @@ export class PokerEngine {
       const result: HandResult = {
         winners: [{ userId: winner.userId, amount: s.pot }],
         showdownCards: {},
+        handNames: {},
+        reason: "fold",
       };
       this.onBroadcast("poker:hand_result", result);
       return;
@@ -300,6 +304,7 @@ export class PokerEngine {
     s.sidePots = calculateSidePots(s.players);
     const showdownCards: Record<string, Card[]> = {};
     const winnings: Map<string, number> = new Map();
+    const evaluated: Map<string, EvaluatedHand> = new Map();
 
     for (const pot of s.sidePots) {
       const eligiblePlayers = activePlayers.filter((p) => pot.eligible.includes(p.userId));
@@ -312,6 +317,7 @@ export class PokerEngine {
         const allCards = [...p.cards, ...s.communityCards];
         const result = evaluateHand(allCards);
         showdownCards[p.userId] = p.cards;
+        evaluated.set(p.userId, result);
 
         if (!bestResult || compareHands(result, bestResult) > 0) {
           bestResult = result;
@@ -330,9 +336,17 @@ export class PokerEngine {
       });
     }
 
+    const handNames: Record<string, string> = {};
+    for (const userId of winnings.keys()) {
+      const ev = evaluated.get(userId);
+      if (ev) handNames[userId] = describeHand(ev);
+    }
+
     const result: HandResult = {
       winners: [...winnings.entries()].map(([userId, amount]) => ({ userId, amount })),
       showdownCards,
+      handNames,
+      reason: "showdown",
     };
     this.onBroadcast("poker:hand_result", result);
   }

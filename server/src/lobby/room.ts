@@ -109,6 +109,27 @@ export class Room {
     seat.confirmed = true;
   }
 
+  moveSeat(userId: string, targetIndex: number): boolean {
+    const from = this.findSeatByUserId(userId);
+    const to = this.seats[targetIndex];
+    if (!from || !to || to.userId !== null || targetIndex === from.index) return false;
+
+    to.userId = from.userId;
+    to.username = from.username;
+    to.chips = from.chips;
+    to.buyIn = from.buyIn;
+    to.confirmed = from.confirmed;
+    to.connected = from.connected;
+
+    from.userId = null;
+    from.username = null;
+    from.chips = 0;
+    from.buyIn = 0;
+    from.confirmed = false;
+    from.connected = false;
+    return true;
+  }
+
   // Resets every confirmed seat; returns the refunds the caller must credit back to points.
   clearConfirmations(): { userId: string; chips: number }[] {
     const refunds: { userId: string; chips: number }[] = [];

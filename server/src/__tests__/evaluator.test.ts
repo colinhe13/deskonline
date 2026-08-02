@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateHand, compareHands } from "../poker/evaluator.js";
+import { evaluateHand, compareHands, describeHand } from "../poker/evaluator.js";
 import { Card, HandRank } from "../poker/types.js";
 
 function c(rank: string, suit: string): Card {
@@ -93,5 +93,25 @@ describe("evaluator", () => {
     const pairK = evaluateHand([c("K", "spades"), c("K", "hearts"), c("A", "diamonds"), c("9", "clubs"), c("7", "spades"), c("3", "hearts"), c("2", "diamonds")]);
     const pairQ = evaluateHand([c("Q", "spades"), c("Q", "hearts"), c("A", "diamonds"), c("9", "clubs"), c("7", "spades"), c("3", "hearts"), c("2", "diamonds")]);
     expect(compareHands(pairK, pairQ)).toBeGreaterThan(0);
+  });
+
+  it("describes one pair", () => {
+    const hand = evaluateHand([c("10", "spades"), c("10", "hearts"), c("A", "diamonds"), c("K", "clubs"), c("8", "spades"), c("2", "hearts"), c("3", "diamonds")]);
+    expect(describeHand(hand)).toBe("一对 10");
+  });
+
+  it("describes a straight", () => {
+    const hand = evaluateHand([c("9", "spades"), c("8", "hearts"), c("7", "diamonds"), c("6", "clubs"), c("5", "spades"), c("K", "hearts"), c("2", "diamonds")]);
+    expect(describeHand(hand)).toBe("顺子");
+  });
+
+  it("describes a full house", () => {
+    const hand = evaluateHand([c("Q", "spades"), c("Q", "hearts"), c("Q", "diamonds"), c("J", "clubs"), c("J", "spades"), c("2", "hearts"), c("3", "diamonds")]);
+    expect(describeHand(hand)).toBe("葫芦 Q 带 J");
+  });
+
+  it("describes a royal flush", () => {
+    const hand = evaluateHand([c("A", "spades"), c("K", "spades"), c("Q", "spades"), c("J", "spades"), c("10", "spades"), c("2", "hearts"), c("3", "diamonds")]);
+    expect(describeHand(hand)).toBe("皇家同花顺");
   });
 });
