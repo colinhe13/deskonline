@@ -1,6 +1,13 @@
 <template>
   <div class="community-cards">
-    <Card v-for="(card, i) in cards" :key="i" :card="card" :visible="true" />
+    <Card
+      v-for="(card, i) in cards"
+      :key="i"
+      :card="card"
+      :visible="true"
+      effect="flip"
+      :delay="i * 0.08"
+    />
     <div v-for="i in emptySlots" :key="'empty-' + i" class="card-slot"></div>
   </div>
 </template>

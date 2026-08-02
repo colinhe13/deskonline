@@ -5,7 +5,9 @@
         v-for="seat in mergedSeats"
         :key="seat.index"
         class="seat-position"
+        :class="{ selectable: !seat.userId && canMoveSeats }"
         :style="seatStyle(seat.index)"
+        @click="onSeatClick(seat)"
       >
         <PlayerSeat
           :seat="seat"
@@ -35,6 +37,21 @@ const props = defineProps<{
   pokerState: PokerState | null;
   myUserId: string | null;
 }>();
+
+const emit = defineEmits<{ sit: [seatIndex: number] }>();
+
+const canMoveSeats = computed(
+  () =>
+    props.room?.status === "waiting" &&
+    !!props.myUserId &&
+    !!props.room?.seats.some((s) => s.userId === props.myUserId),
+);
+
+function onSeatClick(seat: MergedSeat) {
+  if (!seat.userId && canMoveSeats.value) {
+    emit("sit", seat.index);
+  }
+}
 
 interface MergedSeat extends SeatInfo {
   bet: number;
@@ -104,6 +121,12 @@ function seatStyle(index: number) {
   position: absolute;
   transform: translate(-50%, -50%);
 }
+.seat-position.selectable {
+  cursor: pointer;
+}
+.seat-position.selectable:hover {
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.9));
+}
 .table-center {
   position: absolute;
   top: 50%;
@@ -121,8 +144,14 @@ function seatStyle(index: number) {
 
 @media (max-width: 768px) {
   .table-felt {
-    width: 95%;
-    aspect-ratio: 1.2;
+    width: 94%;
+    aspect-ratio: 1 / 1.05;
+  }
+  .table-center {
+    gap: 4px;
+  }
+  .table-id {
+    font-size: 0.65rem;
   }
 }
 </style>

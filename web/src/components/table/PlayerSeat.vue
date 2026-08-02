@@ -177,4 +177,50 @@ defineProps<{ seat: SeatView; isHost: boolean; isMe: boolean; isCurrent: boolean
 .folded {
   opacity: 0.45;
 }
+
+@media (max-width: 768px) {
+  .player-seat {
+    min-width: 52px;
+    gap: 1px;
+  }
+  .cards-row {
+    min-height: 0;
+    gap: 1px;
+  }
+  .avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.75rem;
+    border-width: 1.5px;
+  }
+  .dealer-btn {
+    width: 12px;
+    height: 12px;
+    font-size: 0.5rem;
+    top: -3px;
+    right: -4px;
+  }
+  .seat-info {
+    font-size: 0.6rem;
+  }
+  .host-badge,
+  .me-badge {
+    font-size: 0.45rem;
+    padding: 0 2px;
+  }
+  .seat-chips {
+    font-size: 0.6rem;
+  }
+  .seat-bet {
+    font-size: 0.55rem;
+    padding: 0 4px;
+  }
+  .fold-badge,
+  .allin-badge,
+  .dc-badge,
+  .unconfirmed-badge {
+    font-size: 0.5rem;
+    padding: 0 3px;
+  }
+}
 </style>

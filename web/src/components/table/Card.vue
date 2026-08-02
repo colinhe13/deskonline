@@ -1,5 +1,5 @@
 <template>
-  <div class="card" :class="{ 'card-back': !visible }" :style="cardStyle">
+  <div class="card" :class="[{ 'card-back': !visible }, animClass]" :style="cardStyle">
     <template v-if="visible && card">
       <span class="card-rank">{{ card.rank }}</span>
       <span class="card-suit">{{ suitSymbol }}</span>
@@ -14,17 +14,27 @@
 import { computed } from "vue";
 import { SUIT_SYMBOLS, SUIT_COLORS } from "../../utils/cards";
 
-const props = defineProps<{
-  card?: { rank: string; suit: string } | null;
-  visible?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    card?: { rank: string; suit: string } | null;
+    visible?: boolean;
+    effect?: "deal" | "flip";
+    delay?: number;
+  }>(),
+  { effect: "deal", delay: 0 },
+);
 
 const suitSymbol = computed(() => (props.card ? SUIT_SYMBOLS[props.card.suit] : ""));
+const animClass = computed(() => (props.effect === "flip" ? "card-flip" : "card-deal"));
 const cardStyle = computed(() => {
+  const style: Record<string, string> = {};
   if (props.visible && props.card) {
-    return { backgroundColor: SUIT_COLORS[props.card.suit] };
+    style.backgroundColor = SUIT_COLORS[props.card.suit];
   }
-  return {};
+  if (props.delay > 0) {
+    style.animationDelay = `${props.delay}s`;
+  }
+  return style;
 });
 </script>
 
@@ -58,6 +68,33 @@ const cardStyle = computed(() => {
 .card-suit {
   font-size: 1.1rem;
   line-height: 1;
+}
+
+.card-deal {
+  animation: card-deal-in 0.35s ease both;
+}
+.card-flip {
+  animation: card-flip-in 0.45s ease both;
+}
+@keyframes card-deal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes card-flip-in {
+  from {
+    opacity: 0;
+    transform: rotateY(90deg) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: rotateY(0deg) scale(1);
+  }
 }
 
 @media (max-width: 768px) {

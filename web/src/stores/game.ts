@@ -69,6 +69,8 @@ export interface ActionOption {
 export interface HandResultInfo {
   winners: { userId: string; amount: number }[];
   showdownCards: Record<string, PokerCard[]>;
+  handNames: Record<string, string>;
+  reason: "fold" | "showdown";
 }
 
 export const useGameStore = defineStore("game", () => {

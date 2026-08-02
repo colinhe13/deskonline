@@ -18,7 +18,12 @@
     </p>
 
     <main class="table-main">
-      <PokerTable :room="game.room" :poker-state="game.pokerState" :my-user-id="game.myUserId" />
+      <PokerTable
+        :room="game.room"
+        :poker-state="game.pokerState"
+        :my-user-id="game.myUserId"
+        @sit="moveSeat"
+      />
     </main>
 
     <ActionBar v-if="game.isMyTurn" :actions="game.availableActions" @action="handleAction" />
@@ -47,11 +52,21 @@
 
     <div v-if="game.handResult" class="hand-result-overlay">
       <div class="hand-result-card">
-        <h3>本手结束</h3>
-        <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-row">
-          <span>{{ winnerName(w.userId) }}</span>
-          <span class="winner-amount">+{{ w.amount }}</span>
-        </div>
+        <div class="trophy">🏆</div>
+        <template v-if="game.handResult.reason === 'showdown'">
+          <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-block">
+            <div class="winner-name">{{ winnerName(w.userId) }}</div>
+            <div class="winner-hand">{{ game.handResult.handNames[w.userId] || "" }}</div>
+            <div class="winner-amount">+{{ w.amount }}</div>
+          </div>
+        </template>
+        <template v-else>
+          <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-block">
+            <div class="winner-name">{{ winnerName(w.userId) }}</div>
+            <div class="winner-hand">其他玩家弃牌</div>
+            <div class="winner-amount">+{{ w.amount }}</div>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -161,6 +176,10 @@ function transferHost(targetUserId: string) {
   showTransfer.value = false;
 }
 
+function moveSeat(seatIndex: number) {
+  send("room:move-seat", { seatIndex });
+}
+
 function leaveRoom() {
   send("room:leave", {});
   game.setRoom(null);
@@ -240,33 +259,53 @@ onUnmounted(() => {
 .hand-result-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
 }
 .hand-result-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 1.5rem 2rem;
-  min-width: 240px;
+  background: linear-gradient(160deg, #fffdf5, #f7efd8);
+  border-radius: 16px;
+  padding: 1.75rem 2.5rem;
+  min-width: 260px;
   text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  animation: result-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.hand-result-card h3 {
+.trophy {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+.winner-block {
+  margin: 0.25rem 0;
+}
+.winner-name {
+  font-size: 1.3rem;
+  font-weight: bold;
   color: #1a472a;
-  margin-bottom: 0.75rem;
 }
-.winner-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 1.5rem;
-  padding: 0.25rem 0;
-  font-size: 0.95rem;
+.winner-hand {
+  font-size: 1rem;
+  color: #b7791f;
+  font-weight: 600;
+  margin: 0.2rem 0;
 }
 .winner-amount {
+  font-size: 1.4rem;
   color: #d69e2e;
   font-weight: bold;
+}
+@keyframes result-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 .error-toast {
   position: fixed;
