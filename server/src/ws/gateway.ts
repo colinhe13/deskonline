@@ -70,6 +70,7 @@ export class WebSocketGateway {
     });
 
     ws.send(createServerMessage("connected", { userId: user.userId, username: user.username }));
+    this.lobbyHandler.sendRoomListToUser(user.userId);
   }
 
   private handleMessage(userId: string, type: string, payload: unknown) {

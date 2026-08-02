@@ -30,6 +30,9 @@ export class LobbyHandler {
       case "reconnect":
         this.handleReconnect(userId, username);
         break;
+      case "room:list:request":
+        this.sendRoomListToUser(userId);
+        break;
       default:
         break;
     }
@@ -277,6 +280,10 @@ export class LobbyHandler {
 
   broadcastLobbyList() {
     this.gateway.broadcastAll("room:list", { rooms: roomManager.listRooms() });
+  }
+
+  sendRoomListToUser(userId: string) {
+    this.gateway.sendToUser(userId, "room:list", { rooms: roomManager.listRooms() });
   }
 
   private handleReconnect(userId: string, username: string) {

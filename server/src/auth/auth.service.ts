@@ -38,6 +38,14 @@ export async function login(username: string, password: string) {
   return { token, user: { id: user.id, username: user.username, points: user.points } };
 }
 
+export async function getMe(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new Error("USER_NOT_FOUND");
+  }
+  return { id: user.id, username: user.username, points: user.points };
+}
+
 export function generateToken(payload: JwtPayload): string {
   return jwt.sign(payload, config.jwtSecret, { expiresIn: "7d" });
 }
