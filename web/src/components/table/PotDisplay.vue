@@ -6,12 +6,16 @@
       <span class="chip chip-c"></span>
     </div>
     <span class="pot-label">底池</span>
-    <span class="pot-amount">{{ amount }}</span>
+    <span class="pot-amount">{{ displayAmount }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{ amount: number }>();
+import { computed } from "vue";
+import { useCountUp } from "../../composables/useCountUp";
+
+const props = defineProps<{ amount: number }>();
+const displayAmount = useCountUp(computed(() => props.amount));
 </script>
 
 <style scoped>

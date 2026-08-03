@@ -6,7 +6,7 @@
         <span class="user-name">{{ auth.user?.username }}</span>
         <span class="points-pill">
           <span class="chip-icon" aria-hidden="true"></span>
-          <span class="points">{{ auth.user?.points }}</span>
+          <span class="points">{{ displayPoints }}</span>
         </span>
         <button class="logout-btn" @click="auth.logout()">退出</button>
       </div>
@@ -18,12 +18,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useLobbyStore } from "../stores/lobby";
 import { useGameStore } from "../stores/game";
 import { useWebSocket } from "../composables/useWebSocket";
+import { useCountUp } from "../composables/useCountUp";
 import RoomList from "../components/lobby/RoomList.vue";
 import type { RoomSummary } from "../stores/lobby";
 import type { RoomDetail } from "../stores/game";
@@ -33,6 +34,8 @@ const lobby = useLobbyStore();
 const game = useGameStore();
 const router = useRouter();
 const { send, onMessage, offMessage } = useWebSocket();
+
+const displayPoints = useCountUp(computed(() => auth.user?.points ?? 0));
 
 function handleRoomList(payload: unknown) {
   const p = payload as { rooms: RoomSummary[] };

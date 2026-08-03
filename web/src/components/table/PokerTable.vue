@@ -22,16 +22,18 @@
         <PotDisplay :amount="pokerState?.pot || 0" />
         <span class="table-id">#{{ room?.id }}</span>
       </div>
+      <ChipFlight :flights="flights" @done="removeFlight" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { RoomDetail, PokerState, SeatInfo, PokerPlayer, HandResultInfo } from "../../stores/game";
 import PlayerSeat from "./PlayerSeat.vue";
 import CommunityCards from "./CommunityCards.vue";
 import PotDisplay from "./PotDisplay.vue";
+import ChipFlight, { type ChipFlightItem } from "./ChipFlight.vue";
 
 const props = defineProps<{
   room: RoomDetail | null;
@@ -80,6 +82,27 @@ const mergedSeats = computed<MergedSeat[]>(() => {
     };
   });
 });
+
+// 下注筹码飞行动画：座位 bet 增加时，从该座位坐标飞向台面中心。
+const flights = ref<ChipFlightItem[]>([]);
+let flightSeq = 0;
+
+watch(mergedSeats, (seats, prev) => {
+  seats.forEach((seat, i) => {
+    const prevBet = prev?.[i]?.bet ?? 0;
+    if (seat.bet > prevBet && seat.userId) {
+      const pos = seatStyle(seat.index);
+      flights.value.push({
+        id: ++flightSeq,
+        from: { x: parseFloat(pos.left), y: parseFloat(pos.top) },
+      });
+    }
+  });
+});
+
+function removeFlight(id: number) {
+  flights.value = flights.value.filter((f) => f.id !== id);
+}
 
 function isCurrentSeat(seat: MergedSeat): boolean {
   if (!props.pokerState) return false;
