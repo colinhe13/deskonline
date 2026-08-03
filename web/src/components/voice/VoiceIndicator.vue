@@ -25,12 +25,18 @@ defineProps<{ speaking: boolean; muted: boolean }>();
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #68d391;
+  background: var(--success);
   animation: pulse 1s infinite;
 }
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(104, 211, 145, 0.6); }
-  70% { box-shadow: 0 0 0 6px rgba(104, 211, 145, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(104, 211, 145, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(104, 211, 145, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(104, 211, 145, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(104, 211, 145, 0);
+  }
 }
 </style>

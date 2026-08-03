@@ -10,12 +10,15 @@
           class="player-btn"
           @click="$emit('transfer', p.userId!)"
         >
+          <span class="player-avatar" aria-hidden="true">{{
+            p.username?.charAt(0).toUpperCase()
+          }}</span>
           {{ p.username }}
         </button>
         <p v-if="candidates.length === 0" class="empty">没有其他玩家可移交</p>
       </div>
       <div class="modal-actions">
-        <button type="button" @click="$emit('close')">取消</button>
+        <button type="button" class="btn-ghost" @click="$emit('close')">取消</button>
       </div>
     </div>
   </div>
@@ -37,26 +40,32 @@ const candidates = computed(() =>
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(4, 10, 7, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  padding: 1rem;
+  z-index: var(--z-modal);
 }
 .modal {
-  background: #fff;
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: linear-gradient(170deg, rgba(26, 48, 36, 0.95), rgba(12, 28, 19, 0.96));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 1.6rem 1.5rem;
   width: 90%;
   max-width: 360px;
+  box-shadow: var(--shadow-lg);
 }
 .modal h2 {
   margin-bottom: 0.5rem;
-  color: #1a472a;
+  color: var(--gold);
+  letter-spacing: 0.05em;
 }
 .hint {
-  font-size: 0.85rem;
-  color: #666;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
   margin-bottom: 0.75rem;
 }
 .player-list {
@@ -66,20 +75,44 @@ const candidates = computed(() =>
   margin-bottom: 1rem;
 }
 .player-btn {
-  padding: 0.6rem;
-  background: #f0f4f0;
-  border: 1px solid #d0dcd0;
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  min-height: 44px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 0.95rem;
+  font-size: var(--fs-sm);
   text-align: left;
+  color: var(--text);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast),
+    background var(--dur-fast);
 }
 .player-btn:hover {
-  background: #e0ece0;
+  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(240, 199, 94, 0.4);
+}
+.player-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--felt-0), var(--felt-1));
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .empty {
-  color: #999;
-  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
   text-align: center;
 }
 .modal-actions {
@@ -87,11 +120,24 @@ const candidates = computed(() =>
 }
 .modal-actions button {
   flex: 1;
+  min-height: 44px;
   padding: 0.6rem;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 0.9rem;
-  background: #eee;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    color var(--dur-fast);
+}
+.modal-actions button:hover {
+  transform: translateY(-1px);
+  color: var(--text);
+}
+.modal-actions button:active {
+  transform: scale(0.97);
 }
 </style>

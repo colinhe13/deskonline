@@ -31,48 +31,50 @@
       </button>
     </div>
 
-    <div v-if="showRaisePanel" class="raise-panel">
-      <div class="actions">
-        <button class="action-btn btn-cancel" @click="closeRaisePanel">取消</button>
-        <button
-          v-if="showThirdPot"
-          class="action-btn btn-raise"
-          :class="{ selected: selected === 'third' }"
-          @click="selectQuick('third')"
-        >
-          1/3 ({{ thirdCommit }})
-        </button>
-        <button
-          v-if="showHalfPot"
-          class="action-btn btn-raise"
-          :class="{ selected: selected === 'half' }"
-          @click="selectQuick('half')"
-        >
-          1/2 ({{ halfCommit }})
-        </button>
-        <button
-          v-if="showAllInQuick"
-          class="action-btn btn-allin"
-          :class="{ selected: selected === 'allin' }"
-          @click="selectQuick('allin')"
-        >
-          全下 ({{ chips }})
-        </button>
+    <Transition name="raise-panel">
+      <div v-if="showRaisePanel" class="raise-panel">
+        <div class="actions">
+          <button class="action-btn btn-cancel" @click="closeRaisePanel">取消</button>
+          <button
+            v-if="showThirdPot"
+            class="action-btn btn-raise"
+            :class="{ selected: selected === 'third' }"
+            @click="selectQuick('third')"
+          >
+            1/3 ({{ thirdCommit }})
+          </button>
+          <button
+            v-if="showHalfPot"
+            class="action-btn btn-raise"
+            :class="{ selected: selected === 'half' }"
+            @click="selectQuick('half')"
+          >
+            1/2 ({{ halfCommit }})
+          </button>
+          <button
+            v-if="showAllInQuick"
+            class="action-btn btn-allin"
+            :class="{ selected: selected === 'allin' }"
+            @click="selectQuick('allin')"
+          >
+            全下 ({{ chips }})
+          </button>
+        </div>
+        <div class="raise-control">
+          <input
+            type="range"
+            :min="raiseMin"
+            :max="raiseMax"
+            v-model.number="raiseAmount"
+            @input="selected = 'manual'"
+          />
+          <span class="raise-value">{{ raiseAmount }}</span>
+          <button class="action-btn btn-raise" @click="confirmBet">
+            下注 ({{ raiseAmount }})
+          </button>
+        </div>
       </div>
-      <div class="raise-control">
-        <input
-          type="range"
-          :min="raiseMin"
-          :max="raiseMax"
-          v-model.number="raiseAmount"
-          @input="selected = 'manual'"
-        />
-        <span class="raise-value">{{ raiseAmount }}</span>
-        <button class="action-btn btn-raise" @click="confirmBet">
-          下注 ({{ raiseAmount }})
-        </button>
-      </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -178,50 +180,88 @@ function handleAction(action: ActionOption) {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(0, 0, 0, 0.9);
-  padding: 1rem;
+  z-index: var(--z-actionbar);
+  background: rgba(8, 20, 14, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--glass-border);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.35);
+  padding: 0.85rem 1rem;
+  padding-bottom: calc(0.85rem + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
 .actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.55rem;
   justify-content: center;
   flex-wrap: wrap;
 }
 .action-btn {
-  padding: 0.75rem 1.5rem;
+  padding: 0.7rem 1.35rem;
   border: none;
-  border-radius: 6px;
-  font-size: 1rem;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
+  font-weight: 600;
   cursor: pointer;
   min-height: 44px;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) var(--ease-out);
+}
+.action-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+.action-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
 }
 .action-btn.selected {
-  outline: 2px solid #ffd700;
+  outline: 2px solid var(--gold);
   outline-offset: 2px;
+  box-shadow: var(--shadow-glow-gold);
 }
-.btn-fold { background: #e53e3e; color: #fff; }
-.btn-check { background: #4a5568; color: #fff; }
-.btn-call { background: #3182ce; color: #fff; }
-.btn-raise { background: #d69e2e; color: #fff; }
-.btn-allin { background: #805ad5; color: #fff; }
-.btn-cancel { background: #718096; color: #fff; }
+.btn-fold { background: linear-gradient(160deg, #e05252, #b23a3a); }
+.btn-check,
+.btn-cancel { background: linear-gradient(160deg, #5a6572, #434c56); }
+.btn-call { background: linear-gradient(160deg, var(--info), #2f6aa8); }
+.btn-raise { background: linear-gradient(160deg, var(--gold), var(--gold-strong)); color: #1c1304; }
+.btn-allin { background: linear-gradient(160deg, var(--allin), #6d3fce); }
+.raise-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.raise-panel-enter-active,
+.raise-panel-leave-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.raise-panel-enter-from,
+.raise-panel-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
 .raise-control {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   justify-content: center;
 }
 .raise-control input {
   flex: 1;
-  max-width: 200px;
+  max-width: 220px;
 }
 .raise-value {
-  color: #ffd700;
+  color: var(--gold);
   font-weight: bold;
-  min-width: 50px;
+  min-width: 52px;
   text-align: center;
+  font-size: var(--fs-md);
 }
 </style>

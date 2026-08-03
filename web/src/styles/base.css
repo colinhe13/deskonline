@@ -89,6 +89,24 @@ input[type="range"]::-moz-range-track {
   opacity: 0;
 }
 
+/* 模态框过渡（遮罩淡入 + 面板弹性缩放） */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.modal-enter-active .modal,
+.modal-leave-active .modal {
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+.modal-enter-from .modal,
+.modal-leave-to .modal {
+  transform: scale(0.92) translateY(10px);
+}
+
 /* 减弱动态效果降级 */
 @media (prefers-reduced-motion: reduce) {
   *,

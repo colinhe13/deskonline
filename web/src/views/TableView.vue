@@ -2,7 +2,7 @@
   <div class="table-page">
     <header class="table-header">
       <button @click="leaveRoom">离开</button>
-      <span>房间 #{{ game.room?.id }}</span>
+      <span class="room-no">房间 #{{ game.room?.id }}</span>
       <div class="header-right">
         <VoicePanel v-if="VOICE_ENABLED" />
         <template v-if="isHost && game.room?.status === 'waiting'">
@@ -42,26 +42,34 @@
       @confirm="confirmBuyIn"
     />
 
-    <RoomSettingsModal
-      v-if="showSettings"
-      :settings="settingsForm"
-      @close="showSettings = false"
-      @save="saveSettings"
-    />
+    <Transition name="modal">
+      <RoomSettingsModal
+        v-if="showSettings"
+        :settings="settingsForm"
+        @close="showSettings = false"
+        @save="saveSettings"
+      />
+    </Transition>
 
-    <TransferHostModal
-      v-if="showTransfer"
-      :seats="game.room?.seats ?? []"
-      :my-user-id="game.myUserId"
-      @close="showTransfer = false"
-      @transfer="transferHost"
-    />
+    <Transition name="modal">
+      <TransferHostModal
+        v-if="showTransfer"
+        :seats="game.room?.seats ?? []"
+        :my-user-id="game.myUserId"
+        @close="showTransfer = false"
+        @transfer="transferHost"
+      />
+    </Transition>
 
     <div v-if="game.handResult" class="hand-result-banner">
       <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-block">
         <span class="winner-name">{{ winnerName(w.userId) }}</span>
         <span class="winner-hand">
-          {{ game.handResult.reason === "showdown" ? game.handResult.handNames[w.userId] || "" : "其他玩家弃牌" }}
+          {{
+            game.handResult.reason === "showdown"
+              ? game.handResult.handNames[w.userId] || ""
+              : "其他玩家弃牌"
+          }}
         </span>
         <span class="winner-amount">+{{ w.amount }}</span>
       </div>
@@ -70,8 +78,12 @@
       </button>
     </div>
 
-    <div v-if="errorMsg" class="error-toast">{{ errorMsg }}</div>
-    <div v-if="reconnecting" class="reconnect-overlay">正在重新连接...</div>
+    <Transition name="toast">
+      <div v-if="errorMsg" class="error-toast">{{ errorMsg }}</div>
+    </Transition>
+    <Transition name="reconnect">
+      <div v-if="reconnecting" class="reconnect-overlay">正在重新连接...</div>
+    </Transition>
   </div>
 </template>
 
@@ -229,33 +241,63 @@ onUnmounted(() => {
 
 <style scoped>
 .table-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: #1a472a;
+  background:
+    radial-gradient(85% 55% at 50% 30%, var(--felt-0) 0%, rgba(34, 112, 74, 0) 60%),
+    radial-gradient(130% 100% at 50% 0%, var(--bg-1) 0%, var(--bg-0) 62%);
 }
 .table-header {
+  position: relative;
+  z-index: 20;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.5rem;
-  color: #fff;
-  font-size: 0.9rem;
+  gap: 0.75rem;
+  padding: 0.7rem 1.2rem;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  background: rgba(10, 28, 18, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--glass-border);
 }
 .table-header button {
-  padding: 0.4rem 0.8rem;
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  border: none;
-  border-radius: 4px;
+  padding: 0.45rem 0.9rem;
+  min-height: 38px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background var(--dur-fast),
+    border-color var(--dur-fast);
+}
+.table-header button:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(240, 199, 94, 0.4);
+  transform: translateY(-1px);
+}
+.table-header button:active {
+  transform: scale(0.96);
+}
+.room-no {
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
 }
 .start-btn {
-  background: #d69e2e !important;
+  background: linear-gradient(160deg, var(--gold), var(--gold-strong)) !important;
+  color: #1c1304 !important;
+  font-weight: 600;
+  border-color: transparent !important;
 }
 .start-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  transform: none !important;
 }
 .header-right {
   display: flex;
@@ -264,9 +306,10 @@ onUnmounted(() => {
 }
 .start-hint {
   text-align: center;
-  color: #fbd38d;
-  font-size: 0.8rem;
-  padding: 0 1rem;
+  color: var(--gold-soft);
+  font-size: var(--fs-xs);
+  padding: 0.35rem 1rem;
+  background: rgba(0, 0, 0, 0.25);
 }
 .table-main {
   flex: 1;
@@ -281,47 +324,31 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   right: 0;
-  background: rgba(0, 0, 0, 0.75);
-  color: #fff;
-  padding: 0.5rem 1rem;
+  z-index: var(--z-banner);
+  background: linear-gradient(180deg, rgba(10, 26, 17, 0.94), rgba(10, 26, 17, 0.88));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(240, 199, 94, 0.3);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  padding: 0.55rem 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 1.5rem;
   flex-wrap: wrap;
-  z-index: 45;
-  animation: banner-drop 0.3s ease both;
+  overflow: hidden;
+  animation: banner-drop 0.5s var(--ease-spring) both;
 }
-.winner-block {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-.winner-name {
-  font-size: 1.1rem;
-  font-weight: bold;
-  color: #ffd700;
-}
-.winner-hand {
-  font-size: 0.9rem;
-  color: #fbd38d;
-}
-.winner-amount {
-  font-size: 1.1rem;
-  color: #68d391;
-  font-weight: bold;
-}
-.reveal-btn {
-  padding: 0.35rem 0.9rem;
-  background: #d69e2e;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-.reveal-btn:hover {
-  background: #b7791f;
+.hand-result-banner::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 55%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  animation: banner-shine 2.6s ease-in-out infinite;
+  pointer-events: none;
 }
 @keyframes banner-drop {
   from {
@@ -333,28 +360,100 @@ onUnmounted(() => {
     transform: translateY(0);
   }
 }
+@keyframes banner-shine {
+  0% {
+    left: -60%;
+  }
+  60%,
+  100% {
+    left: 115%;
+  }
+}
+.winner-block {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  position: relative;
+}
+.winner-name {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--gold);
+}
+.winner-hand {
+  font-size: var(--fs-sm);
+  color: var(--gold-soft);
+}
+.winner-amount {
+  font-size: 1.1rem;
+  color: var(--success);
+  font-weight: bold;
+}
+.reveal-btn {
+  padding: 0.35rem 0.95rem;
+  min-height: 36px;
+  background: linear-gradient(160deg, var(--gold), var(--gold-strong));
+  color: #1c1304;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.reveal-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow-gold);
+}
+.reveal-btn:active {
+  transform: scale(0.96);
+}
 .error-toast {
   position: fixed;
   bottom: 100px;
   left: 50%;
   transform: translateX(-50%);
-  background: #e53e3e;
-  color: #fff;
+  background: linear-gradient(160deg, var(--danger), #a93226);
+  color: var(--text);
   padding: 0.6rem 1.2rem;
-  border-radius: 6px;
-  z-index: 70;
-  font-size: 0.85rem;
+  border-radius: var(--radius-md);
+  z-index: var(--z-toast);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-md);
+}
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 16px);
 }
 .reconnect-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  background: #d69e2e;
-  color: #fff;
+  z-index: var(--z-reconnect);
+  background: linear-gradient(160deg, var(--gold), var(--gold-strong));
+  color: #1c1304;
   text-align: center;
   padding: 0.5rem;
-  z-index: 60;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+}
+.reconnect-enter-active,
+.reconnect-leave-active {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.reconnect-enter-from,
+.reconnect-leave-to {
+  transform: translateY(-100%);
 }
 </style>

@@ -27,8 +27,8 @@
         </label>
         <p class="hint">修改设置后，所有玩家需要重新确认带入金额。</p>
         <div class="modal-actions">
-          <button type="button" @click="$emit('close')">取消</button>
-          <button type="submit">保存</button>
+          <button type="button" class="btn-ghost" @click="$emit('close')">取消</button>
+          <button type="submit" class="btn-primary">保存</button>
         </div>
       </form>
     </div>
@@ -60,42 +60,56 @@ function save() {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(4, 10, 7, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  padding: 1rem;
+  z-index: var(--z-modal);
 }
 .modal {
-  background: #fff;
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: linear-gradient(170deg, rgba(26, 48, 36, 0.95), rgba(12, 28, 19, 0.96));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 1.6rem 1.5rem;
   width: 90%;
   max-width: 360px;
+  box-shadow: var(--shadow-lg);
 }
 .modal h2 {
   margin-bottom: 1rem;
-  color: #1a472a;
+  color: var(--gold);
+  letter-spacing: 0.05em;
 }
 .modal label {
   display: block;
   margin-bottom: 0.75rem;
-  font-size: 0.9rem;
-  color: #333;
+  font-size: var(--fs-sm);
+  color: var(--text);
 }
 .modal input,
 .modal select {
   display: block;
   width: 100%;
-  margin-top: 0.25rem;
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
+  margin-top: 0.3rem;
+  padding: 0.55rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.modal input:focus,
+.modal select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(240, 199, 94, 0.16);
 }
 .hint {
-  font-size: 0.75rem;
-  color: #999;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
   margin: 0.5rem 0;
 }
 .modal-actions {
@@ -105,17 +119,38 @@ function save() {
 }
 .modal-actions button {
   flex: 1;
+  min-height: 44px;
   padding: 0.6rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background var(--dur-fast);
 }
-.modal-actions button:first-child {
-  background: #eee;
+.modal-actions button:hover {
+  transform: translateY(-1px);
 }
-.modal-actions button:last-child {
-  background: #1a472a;
-  color: #fff;
+.modal-actions button:active {
+  transform: scale(0.97);
+}
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  border: 1px solid var(--glass-border) !important;
+}
+.btn-ghost:hover {
+  color: var(--text);
+}
+.btn-primary {
+  background: linear-gradient(160deg, var(--gold), var(--gold-strong));
+  color: #1c1304;
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover {
+  box-shadow: var(--shadow-glow-gold);
 }
 </style>

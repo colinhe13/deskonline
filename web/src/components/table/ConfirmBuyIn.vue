@@ -12,7 +12,13 @@
         class="slider"
       />
       <div class="amount-row">
-        <input type="number" :min="minBuyIn" :max="maxBuyIn" v-model.number="amount" class="amount-input" />
+        <input
+          type="number"
+          :min="minBuyIn"
+          :max="maxBuyIn"
+          v-model.number="amount"
+          class="amount-input"
+        />
         <button class="confirm-btn" :disabled="!valid" @click="confirm">确认带入</button>
       </div>
       <p v-if="!valid" class="error">金额需在 {{ minBuyIn }} - {{ maxBuyIn }} 之间</p>
@@ -41,24 +47,40 @@ function confirm() {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(0, 0, 0, 0.9);
+  z-index: var(--z-actionbar);
+  background: rgba(8, 20, 14, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--glass-border);
   padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   display: flex;
   justify-content: center;
-  z-index: 40;
+  animation: sheet-in 0.35s var(--ease-spring) both;
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .confirm-card {
   width: 100%;
   max-width: 420px;
-  color: #fff;
+  color: var(--text);
   text-align: center;
 }
 .confirm-card h3 {
   margin-bottom: 0.25rem;
+  letter-spacing: 0.05em;
 }
 .range-hint {
-  font-size: 0.8rem;
-  color: #aaa;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
   margin-bottom: 0.75rem;
 }
 .slider {
@@ -73,28 +95,46 @@ function confirm() {
 }
 .amount-input {
   width: 120px;
-  padding: 0.5rem;
-  border-radius: 6px;
-  border: none;
-  font-size: 1rem;
+  padding: 0.55rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: var(--fs-md);
   text-align: center;
+}
+.amount-input:focus {
+  outline: none;
+  border-color: var(--gold);
 }
 .confirm-btn {
   padding: 0.6rem 1.2rem;
-  background: #d69e2e;
-  color: #fff;
+  min-height: 44px;
+  background: linear-gradient(160deg, var(--gold), var(--gold-strong));
+  color: #1c1304;
+  font-weight: 600;
   border: none;
-  border-radius: 6px;
-  font-size: 1rem;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
   cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.confirm-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow-gold);
+}
+.confirm-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .confirm-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 .error {
-  color: #fc8181;
-  font-size: 0.8rem;
+  color: var(--danger);
+  font-size: var(--fs-sm);
   margin-top: 0.5rem;
 }
 </style>
