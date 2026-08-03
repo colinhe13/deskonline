@@ -117,3 +117,27 @@ describe("hand card privacy", () => {
     expect(engine.revealCards(loser)).toBe(false);
   });
 });
+
+describe("reveal edge cases", () => {
+  it("rejects reveal for unknown players and before settlement", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.revealCards("ghost")).toBe(false);
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+    expect(engine.revealCards("ghost")).toBe(false);
+  });
+
+  it("after the next hand starts, a stale reveal attempt is rejected", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.revealCards("u0")).toBe(true);
+    expect(engine.nextHand()).toBe(true);
+    expect(engine.revealCards("u0")).toBe(false); // phase is preflop again
+  });
+});
