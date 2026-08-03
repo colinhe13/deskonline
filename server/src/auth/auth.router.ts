@@ -15,7 +15,9 @@ const registerSchema = z.object({
       "Username can only contain letters, numbers, and underscores",
     ),
   password: z.string().min(6),
-  registerCode: z.string().min(1),
+  // Absent or wrong code must surface as REGISTER_CODE_INVALID, not a
+  // generic validation error.
+  registerCode: z.string().optional().default(""),
 });
 
 const loginSchema = z.object({

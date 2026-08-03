@@ -84,6 +84,10 @@ describe("auth.service", () => {
       await expect(register("alice", "password123", "999")).rejects.toThrow(
         "REGISTER_CODE_INVALID",
       );
+      // Missing code (router default) is rejected the same way.
+      await expect(register("alice", "password123", "")).rejects.toThrow(
+        "REGISTER_CODE_INVALID",
+      );
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
