@@ -6,6 +6,7 @@
       folded: seat.folded,
       current: isCurrent,
       'is-me': isMe,
+      winner: isWinner,
     }"
   >
     <template v-if="seat.userId">
@@ -54,7 +55,13 @@ interface SeatView {
   cards: { rank: string; suit: string }[];
 }
 
-defineProps<{ seat: SeatView; isHost: boolean; isMe: boolean; isCurrent: boolean }>();
+defineProps<{
+  seat: SeatView;
+  isHost: boolean;
+  isMe: boolean;
+  isCurrent: boolean;
+  isWinner: boolean;
+}>();
 </script>
 
 <style scoped>
@@ -90,6 +97,15 @@ defineProps<{ seat: SeatView; isHost: boolean; isMe: boolean; isCurrent: boolean
 .current .avatar {
   border-color: #ffd700;
   box-shadow: 0 0 10px rgba(255, 215, 0, 0.7);
+}
+.winner .avatar {
+  border-color: #ffd700;
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.95);
+  background: #b7791f;
+}
+.winner :deep(.card) {
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.9);
+  outline: 2px solid #ffd700;
 }
 .is-me .avatar {
   border-color: #63b3ed;

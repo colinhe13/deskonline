@@ -14,6 +14,7 @@
           :is-host="seat.userId === room?.hostId"
           :is-me="seat.userId === myUserId"
           :is-current="isCurrentSeat(seat)"
+          :is-winner="isWinner(seat)"
         />
       </div>
       <div class="table-center">
@@ -27,7 +28,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import type { RoomDetail, PokerState, SeatInfo, PokerPlayer } from "../../stores/game";
+import type { RoomDetail, PokerState, SeatInfo, PokerPlayer, HandResultInfo } from "../../stores/game";
 import PlayerSeat from "./PlayerSeat.vue";
 import CommunityCards from "./CommunityCards.vue";
 import PotDisplay from "./PotDisplay.vue";
@@ -36,6 +37,7 @@ const props = defineProps<{
   room: RoomDetail | null;
   pokerState: PokerState | null;
   myUserId: string | null;
+  handResult: HandResultInfo | null;
 }>();
 
 const emit = defineEmits<{ sit: [seatIndex: number] }>();
@@ -83,6 +85,11 @@ function isCurrentSeat(seat: MergedSeat): boolean {
   if (!props.pokerState) return false;
   const current = props.pokerState.players[props.pokerState.currentPlayerIndex];
   return current?.userId === seat.userId && seat.userId !== null;
+}
+
+function isWinner(seat: MergedSeat): boolean {
+  if (!props.handResult || !seat.userId) return false;
+  return props.handResult.winners.some((w) => w.userId === seat.userId);
 }
 
 function seatStyle(index: number) {

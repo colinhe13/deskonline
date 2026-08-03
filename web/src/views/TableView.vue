@@ -22,6 +22,7 @@
         :room="game.room"
         :poker-state="game.pokerState"
         :my-user-id="game.myUserId"
+        :hand-result="game.handResult"
         @sit="moveSeat"
       />
     </main>
@@ -56,24 +57,17 @@
       @transfer="transferHost"
     />
 
-    <div v-if="game.handResult" class="hand-result-overlay">
-      <div class="hand-result-card">
-        <div class="trophy">🏆</div>
-        <template v-if="game.handResult.reason === 'showdown'">
-          <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-block">
-            <div class="winner-name">{{ winnerName(w.userId) }}</div>
-            <div class="winner-hand">{{ game.handResult.handNames[w.userId] || "" }}</div>
-            <div class="winner-amount">+{{ w.amount }}</div>
-          </div>
-        </template>
-        <template v-else>
-          <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-block">
-            <div class="winner-name">{{ winnerName(w.userId) }}</div>
-            <div class="winner-hand">其他玩家弃牌</div>
-            <div class="winner-amount">+{{ w.amount }}</div>
-          </div>
-        </template>
+    <div v-if="game.handResult" class="hand-result-banner">
+      <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-block">
+        <span class="winner-name">{{ winnerName(w.userId) }}</span>
+        <span class="winner-hand">
+          {{ game.handResult.reason === "showdown" ? game.handResult.handNames[w.userId] || "" : "其他玩家弃牌" }}
+        </span>
+        <span class="winner-amount">+{{ w.amount }}</span>
       </div>
+      <button v-if="canRevealCards" class="reveal-btn" @click="revealMyCards">
+        展示手牌
+      </button>
     </div>
 
     <div v-if="errorMsg" class="error-toast">{{ errorMsg }}</div>
@@ -104,6 +98,7 @@ const { isReconnecting: reconnecting, send, onMessage, offMessage } = useWebSock
 const showSettings = ref(false);
 const showTransfer = ref(false);
 const errorMsg = ref("");
+const revealedMine = ref(false);
 let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isHost = computed(() => game.room?.hostId != null && game.room.hostId === game.myUserId);
@@ -120,6 +115,19 @@ const settingsForm = computed(() => ({
   minBuyIn: game.room?.minBuyIn ?? 150,
   maxBuyIn: game.room?.maxBuyIn ?? 750,
 }));
+
+const canRevealCards = computed(
+  () =>
+    !!game.handResult &&
+    game.handResult.reason === "fold" &&
+    game.handResult.winners.some((w) => w.userId === game.myUserId) &&
+    !revealedMine.value,
+);
+
+function revealMyCards() {
+  send("poker:reveal", {});
+  revealedMine.value = true;
+}
 
 function showError(message: string) {
   errorMsg.value = message;
@@ -145,6 +153,7 @@ function handlePokerUpdate(payload: unknown) {
   // the result display.
   if (p.state.phase === "preflop") {
     game.setHandResult(null);
+    revealedMine.value = false;
   }
 }
 
@@ -267,55 +276,61 @@ onUnmounted(() => {
   padding: 1rem;
   padding-bottom: 90px;
 }
-.hand-result-overlay {
+.hand-result-banner {
   position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  padding: 0.5rem 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
-}
-.hand-result-card {
-  background: linear-gradient(160deg, #fffdf5, #f7efd8);
-  border-radius: 16px;
-  padding: 1.75rem 2.5rem;
-  min-width: 260px;
-  text-align: center;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-  animation: result-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.trophy {
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  z-index: 45;
+  animation: banner-drop 0.3s ease both;
 }
 .winner-block {
-  margin: 0.25rem 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
 }
 .winner-name {
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   font-weight: bold;
-  color: #1a472a;
+  color: #ffd700;
 }
 .winner-hand {
-  font-size: 1rem;
-  color: #b7791f;
-  font-weight: 600;
-  margin: 0.2rem 0;
+  font-size: 0.9rem;
+  color: #fbd38d;
 }
 .winner-amount {
-  font-size: 1.4rem;
-  color: #d69e2e;
+  font-size: 1.1rem;
+  color: #68d391;
   font-weight: bold;
 }
-@keyframes result-pop {
+.reveal-btn {
+  padding: 0.35rem 0.9rem;
+  background: #d69e2e;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.reveal-btn:hover {
+  background: #b7791f;
+}
+@keyframes banner-drop {
   from {
     opacity: 0;
-    transform: scale(0.7);
+    transform: translateY(-100%);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0);
   }
 }
 .error-toast {
