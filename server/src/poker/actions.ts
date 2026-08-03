@@ -22,22 +22,23 @@ export function getAvailableActions(state: GameState, userId: string): ActionOpt
       actions.push({ type: "call", amount: toCall });
       const minRaiseTotal = state.currentBet + state.minRaise;
       const raiseAmount = minRaiseTotal - player.bet;
-      if (player.chips > toCall) {
-        actions.push({
-          type: "raise",
-          min: Math.min(raiseAmount, player.chips),
-          max: player.chips,
-        });
-      }
+      actions.push({
+        type: "raise",
+        min: Math.min(raiseAmount, player.chips),
+        max: player.chips,
+      });
+      actions.push({ type: "allin", amount: player.chips });
     }
   } else {
     actions.push({ type: "check" });
+    actions.push({ type: "fold" });
     if (player.chips > 0) {
       actions.push({
         type: "raise",
         min: Math.min(state.bigBlind, player.chips),
         max: player.chips,
       });
+      actions.push({ type: "allin", amount: player.chips });
     }
   }
 
