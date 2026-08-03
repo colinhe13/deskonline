@@ -18,6 +18,9 @@
         <span>已确认 {{ room.confirmedCount }}</span>
         <span>盲注 {{ room.smallBlind }}/{{ room.bigBlind }}</span>
         <span>带入 {{ room.minBuyIn }}-{{ room.maxBuyIn }}</span>
+        <span v-if="room.spectatorCount > 0">
+          观战 {{ room.spectatorCount }}
+        </span>
       </div>
       <div class="room-status" :class="room.status">
         <span class="status-dot" aria-hidden="true"></span>

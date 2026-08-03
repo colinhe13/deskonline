@@ -60,11 +60,18 @@ function onRemoveAi(seat: MergedSeat) {
   if (seat.userId) emit("remove-ai", seat.userId);
 }
 
+const isViewerSpectator = computed(
+  () =>
+    !!props.myUserId &&
+    !!props.room?.spectators?.some((s) => s.userId === props.myUserId),
+);
+
 const canMoveSeats = computed(
   () =>
     props.room?.status === "waiting" &&
     !!props.myUserId &&
-    !!props.room?.seats.some((s) => s.userId === props.myUserId),
+    (!!props.room?.seats.some((s) => s.userId === props.myUserId) ||
+      isViewerSpectator.value),
 );
 
 function onSeatClick(seat: MergedSeat) {

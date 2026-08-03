@@ -1,7 +1,7 @@
 <template>
   <div class="table-page">
     <header class="table-header">
-      <button @click="leaveRoom">离开</button>
+      <button v-if="!isSpectator" @click="leaveRoom">离开</button>
       <span class="room-no">房间 #{{ game.room?.id }}</span>
       <div class="header-right">
         <VoicePanel v-if="VOICE_ENABLED" />
@@ -37,6 +37,19 @@
       牌局暂停：等待输光玩家重新带入
     </p>
 
+    <div v-if="isSpectator" class="spectate-banner">
+      <span class="spectate-badge">观战中</span>
+      <span v-if="canSitFromSpectate" class="spectate-hint">
+        点击空座位即可入座
+      </span>
+      <span v-else class="spectate-hint">本手牌结束后可入座</span>
+      <button class="spectate-leave" @click="leaveRoom">退出观战</button>
+    </div>
+
+    <p v-if="spectatorNames.length > 0" class="spectator-list">
+      观战者：{{ spectatorNames.join("、") }}
+    </p>
+
     <main class="table-main">
       <PokerTable
         :room="game.room"
@@ -44,7 +57,7 @@
         :my-user-id="game.myUserId"
         :hand-result="game.handResult"
         :is-viewer-host="isHost"
-        @sit="moveSeat"
+        @sit="handleSitDown"
         @remove-ai="removeAi"
       />
     </main>
@@ -157,9 +170,23 @@ const isHost = computed(
 const mySeat = computed(() =>
   game.room?.seats.find((s) => s.userId === game.myUserId),
 );
+const isSpectator = computed(
+  () =>
+    !!game.myUserId &&
+    !!game.room?.spectators?.some((s) => s.userId === game.myUserId),
+);
+const spectatorNames = computed(
+  () =>
+    game.room?.spectators
+      ?.filter((s) => s.userId !== game.myUserId)
+      .map((s) => s.username) ?? [],
+);
 const canStart = computed(() => (game.room?.confirmedCount ?? 0) >= 2);
 const isRoomFull = computed(
   () => !!game.room && game.room.playerCount >= game.room.maxPlayers,
+);
+const canSitFromSpectate = computed(
+  () => game.room?.status === "waiting" && !isRoomFull.value,
 );
 const needConfirmBuyIn = computed(
   () =>
@@ -254,8 +281,12 @@ function transferHost(targetUserId: string) {
   showTransfer.value = false;
 }
 
-function moveSeat(seatIndex: number) {
-  send("room:move-seat", { seatIndex });
+function handleSitDown(seatIndex: number) {
+  if (isSpectator.value && game.room) {
+    send("room:join", { roomId: game.room.id, seatIndex });
+  } else {
+    send("room:move-seat", { seatIndex });
+  }
 }
 
 function leaveRoom() {
@@ -416,6 +447,51 @@ onUnmounted(() => {
   padding: 0.35rem 1rem;
   background: rgba(240, 199, 94, 0.18);
   border-bottom: 1px solid rgba(240, 199, 94, 0.3);
+}
+.spectate-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem;
+  font-size: var(--fs-xs);
+  background: rgba(74, 144, 217, 0.18);
+  border-bottom: 1px solid rgba(74, 144, 217, 0.35);
+  color: var(--text);
+}
+.spectate-badge {
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background: rgba(74, 144, 217, 0.35);
+  color: #cfe6ff;
+  font-weight: 600;
+}
+.spectate-hint {
+  color: var(--text-dim);
+}
+.spectate-leave {
+  padding: 0.25rem 0.7rem;
+  min-height: 32px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast),
+    border-color var(--dur-fast);
+}
+.spectate-leave:hover {
+  color: var(--text);
+  border-color: var(--gold);
+}
+.spectator-list {
+  text-align: center;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  padding: 0.25rem 1rem 0;
+  margin: 0;
 }
 .table-main {
   flex: 1;

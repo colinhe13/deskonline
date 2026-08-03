@@ -76,19 +76,10 @@ function handleRoomError(payload: unknown) {
   showToast(p.message || "操作失败", "error");
 }
 
-function handleJoinQueued(payload: unknown) {
-  const p = payload as { seatIndex?: number };
-  showToast(
-    `已加入排队，AI 将在本手牌结束后让座（座位 ${p.seatIndex}）`,
-    "info",
-  );
-}
-
 onMounted(() => {
   onMessage("room:list", handleRoomList);
   onMessage("room:state", handleRoomState);
   onMessage("room:error", handleRoomError);
-  onMessage("room:join-queued", handleJoinQueued);
   send("room:list:request", {});
 });
 
@@ -97,7 +88,6 @@ onUnmounted(() => {
   offMessage("room:list", handleRoomList);
   offMessage("room:state", handleRoomState);
   offMessage("room:error", handleRoomError);
-  offMessage("room:join-queued", handleJoinQueued);
 });
 </script>
 

@@ -12,6 +12,7 @@ export interface RoomSummary {
   minBuyIn: number;
   maxBuyIn: number;
   status: string;
+  spectatorCount: number;
 }
 
 export const useLobbyStore = defineStore("lobby", () => {

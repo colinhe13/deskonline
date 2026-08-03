@@ -219,6 +219,86 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(full).toContain("42");
   });
 
+  it("PokerTable：观战者在等待中可点选空座位", async () => {
+    const html = await render(PokerTable, {
+      room: {
+        id: "main",
+        maxPlayers: 9,
+        hostId: "u1",
+        status: "waiting",
+        smallBlind: 1,
+        bigBlind: 2,
+        minBuyIn: 150,
+        maxBuyIn: 750,
+        confirmedCount: 1,
+        seats: [
+          {
+            index: 0,
+            userId: "u1",
+            username: "alice",
+            chips: 500,
+            buyIn: 500,
+            connected: true,
+            confirmed: true,
+          },
+          {
+            index: 1,
+            userId: null,
+            username: null,
+            chips: 0,
+            buyIn: 0,
+            connected: false,
+            confirmed: false,
+          },
+        ],
+        spectators: [{ userId: "u9", username: "carol" }],
+      },
+      pokerState: null,
+      myUserId: "u9",
+      handResult: null,
+    });
+    expect(html).toContain("selectable");
+
+    const seatedViewer = await render(PokerTable, {
+      room: {
+        id: "main",
+        maxPlayers: 9,
+        hostId: "u1",
+        status: "waiting",
+        smallBlind: 1,
+        bigBlind: 2,
+        minBuyIn: 150,
+        maxBuyIn: 750,
+        confirmedCount: 1,
+        seats: [
+          {
+            index: 0,
+            userId: "u1",
+            username: "alice",
+            chips: 500,
+            buyIn: 500,
+            connected: true,
+            confirmed: true,
+          },
+          {
+            index: 1,
+            userId: null,
+            username: null,
+            chips: 0,
+            buyIn: 0,
+            connected: false,
+            confirmed: false,
+          },
+        ],
+        spectators: [],
+      },
+      pokerState: null,
+      myUserId: "nobody",
+      handResult: null,
+    });
+    expect(seatedViewer).not.toContain("selectable");
+  });
+
   it("CommunityCards：空槽位补齐到 5 张，5 张时无空槽", async () => {
     const none = await render(CommunityCards, { cards: [] });
     expect(none.match(/card-slot/g)?.length).toBe(5);
@@ -315,6 +395,7 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
           minBuyIn: 150,
           maxBuyIn: 750,
           status: "waiting",
+          spectatorCount: 0,
         },
         {
           id: 2,
@@ -326,6 +407,7 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
           minBuyIn: 150,
           maxBuyIn: 750,
           status: "playing",
+          spectatorCount: 3,
         },
       ],
     });
@@ -333,6 +415,7 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(html).toContain("等待中");
     expect(html).toContain("游戏中");
     expect(html).toContain("--i:1;");
+    expect(html).toContain("观战 3");
   });
 
   it("ConfirmBuyIn：边界金额校验渲染", async () => {

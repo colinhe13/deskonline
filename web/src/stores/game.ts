@@ -12,6 +12,11 @@ export interface SeatInfo {
   isAi?: boolean;
 }
 
+export interface SpectatorInfo {
+  userId: string;
+  username: string;
+}
+
 export interface RoomDetail {
   id: string;
   hostId: string | null;
@@ -25,6 +30,7 @@ export interface RoomDetail {
   status: string;
   autoResume?: boolean;
   seats: SeatInfo[];
+  spectators: SpectatorInfo[];
 }
 
 export interface PokerCard {
