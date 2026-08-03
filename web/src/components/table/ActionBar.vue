@@ -1,6 +1,6 @@
 <template>
   <div class="action-bar" v-if="actions.length > 0">
-    <div class="actions">
+    <div v-if="!showRaisePanel" class="actions">
       <button
         v-if="foldAction"
         class="action-btn btn-fold"
@@ -16,7 +16,7 @@
         {{ callAction.type === "check" ? "过牌" : `跟注 (${callAction.amount})` }}
       </button>
       <button
-        v-if="raiseAction && !showRaisePanel"
+        v-if="raiseAction"
         class="action-btn btn-raise"
         @click="openRaisePanel"
       >
