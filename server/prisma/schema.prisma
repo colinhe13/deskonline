@@ -12,6 +12,7 @@ model User {
   username  String   @unique @db.VarChar(32)
   password  String   @db.VarChar(255)
   points    Int      @default(10000)
+  isAi      Boolean  @default(false) @map("is_ai")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
