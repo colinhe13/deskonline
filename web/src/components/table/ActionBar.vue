@@ -6,59 +6,80 @@
         class="action-btn btn-fold"
         @click="handleAction(foldAction)"
       >
-        {{ actionLabel(foldAction) }}
+        弃牌
       </button>
       <button
         v-if="callAction"
         class="action-btn btn-call"
         @click="handleAction(callAction)"
       >
-        {{ actionLabel(callAction) }}
+        {{ callAction.type === "check" ? "过牌" : `跟注 (${callAction.amount})` }}
       </button>
       <button
-        v-if="showThirdPot"
+        v-if="raiseAction && !showRaisePanel"
         class="action-btn btn-raise"
-        @click="emit('action', 'raise', thirdPotAmount)"
+        @click="openRaisePanel"
       >
-        1/3
+        加注
       </button>
       <button
-        v-if="showHalfPot"
-        class="action-btn btn-raise"
-        @click="emit('action', 'raise', halfPotAmount)"
-      >
-        1/2
-      </button>
-      <button
-        v-if="raiseAction"
-        class="action-btn btn-raise"
-        @click="handleAction(raiseAction)"
-      >
-        {{ actionLabel(raiseAction) }}
-      </button>
-      <button
-        v-if="allInAction"
+        v-if="!raiseAction && allInAction"
         class="action-btn btn-allin"
         @click="handleAction(allInAction)"
       >
-        {{ actionLabel(allInAction) }}
+        全下 ({{ allInAction.amount }})
       </button>
     </div>
-    <div v-if="showRaiseSlider" class="raise-control">
-      <input
-        type="range"
-        :min="raiseMin"
-        :max="raiseMax"
-        v-model.number="raiseAmount"
-      />
-      <span class="raise-value">{{ raiseAmount }}</span>
-      <button class="action-btn btn-raise" @click="confirmRaise">确认加注</button>
+
+    <div v-if="showRaisePanel" class="raise-panel">
+      <div class="actions">
+        <button class="action-btn btn-cancel" @click="closeRaisePanel">取消</button>
+        <button
+          v-if="showThirdPot"
+          class="action-btn btn-raise"
+          :class="{ selected: selected === 'third' }"
+          @click="selectQuick('third')"
+        >
+          1/3 ({{ thirdCommit }})
+        </button>
+        <button
+          v-if="showHalfPot"
+          class="action-btn btn-raise"
+          :class="{ selected: selected === 'half' }"
+          @click="selectQuick('half')"
+        >
+          1/2 ({{ halfCommit }})
+        </button>
+        <button
+          v-if="showAllInQuick"
+          class="action-btn btn-allin"
+          :class="{ selected: selected === 'allin' }"
+          @click="selectQuick('allin')"
+        >
+          全下 ({{ chips }})
+        </button>
+      </div>
+      <div class="raise-control">
+        <input
+          type="range"
+          :min="raiseMin"
+          :max="raiseMax"
+          v-model.number="raiseAmount"
+          @input="selected = 'manual'"
+        />
+        <span class="raise-value">{{ raiseAmount }}</span>
+        <button class="action-btn btn-raise" @click="confirmBet">
+          下注 ({{ raiseAmount }})
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import type { PokerState } from "../../stores/game";
+import { quickCommit, canQuickBet } from "../../utils/quickBet";
 
 interface ActionOption {
   type: string;
@@ -67,16 +88,28 @@ interface ActionOption {
   max?: number;
 }
 
+type QuickSelection = "third" | "half" | "allin" | "manual";
+
 const props = defineProps<{
   actions: ActionOption[];
-  pot: number;
-  bigBlind: number;
-  chips: number;
+  pokerState: PokerState | null;
+  myUserId: string | null;
 }>();
 const emit = defineEmits<{ action: [type: string, amount?: number] }>();
 
-const showRaiseSlider = ref(false);
+const showRaisePanel = ref(false);
 const raiseAmount = ref(0);
+const selected = ref<QuickSelection>("manual");
+
+const me = computed(
+  () => props.pokerState?.players.find((p) => p.userId === props.myUserId) ?? null,
+);
+const chips = computed(() => me.value?.chips ?? 0);
+const playerBet = computed(() => me.value?.bet ?? 0);
+const pot = computed(() => props.pokerState?.pot ?? 0);
+const bigBlind = computed(() => props.pokerState?.bigBlind ?? 0);
+const currentBet = computed(() => props.pokerState?.currentBet ?? 0);
+const minRaise = computed(() => props.pokerState?.minRaise ?? 0);
 
 const foldAction = computed(() => props.actions.find((a) => a.type === "fold"));
 const callAction = computed(() =>
@@ -87,43 +120,55 @@ const allInAction = computed(() => props.actions.find((a) => a.type === "allin")
 const raiseMin = computed(() => raiseAction.value?.min || 0);
 const raiseMax = computed(() => raiseAction.value?.max || 0);
 
-const quickBetAmount = (fraction: number) =>
-  props.bigBlind > 0
-    ? Math.floor((props.pot * fraction) / props.bigBlind) * props.bigBlind
-    : 0;
+const betContext = computed(() => ({
+  pot: pot.value,
+  bigBlind: bigBlind.value,
+  chips: chips.value,
+  playerBet: playerBet.value,
+  currentBet: currentBet.value,
+  minRaise: minRaise.value,
+}));
 
-const thirdPotAmount = computed(() => quickBetAmount(1 / 3));
-const halfPotAmount = computed(() => quickBetAmount(1 / 2));
+const thirdCommit = computed(() => quickCommit(betContext.value, 1 / 3));
+const halfCommit = computed(() => quickCommit(betContext.value, 1 / 2));
+const showThirdPot = computed(() => canQuickBet(betContext.value, 1 / 3));
+const showHalfPot = computed(() => canQuickBet(betContext.value, 1 / 2));
+const showAllInQuick = computed(
+  () => !!raiseAction.value && !!allInAction.value && chips.value > 0,
+);
 
-const canQuickBet = (amount: number) =>
-  !!raiseAction.value && amount >= raiseMin.value && props.chips >= amount;
+function openRaisePanel() {
+  raiseAmount.value = raiseMin.value;
+  selected.value = "manual";
+  showRaisePanel.value = true;
+}
 
-const showThirdPot = computed(() => canQuickBet(thirdPotAmount.value));
-const showHalfPot = computed(() => canQuickBet(halfPotAmount.value));
+function closeRaisePanel() {
+  showRaisePanel.value = false;
+}
 
-function actionLabel(action: ActionOption): string {
-  switch (action.type) {
-    case "fold": return "弃牌";
-    case "check": return "过牌";
-    case "call": return `跟注 ${action.amount}`;
-    case "raise": return "加注";
-    case "allin": return `全下 ${action.amount}`;
-    default: return action.type;
+function selectQuick(kind: Exclude<QuickSelection, "manual">) {
+  selected.value = kind;
+  if (kind === "allin") {
+    raiseAmount.value = chips.value;
+  } else if (kind === "third") {
+    raiseAmount.value = thirdCommit.value;
+  } else {
+    raiseAmount.value = halfCommit.value;
   }
+}
+
+function confirmBet() {
+  if (selected.value === "allin") {
+    emit("action", "allin", chips.value);
+  } else {
+    emit("action", "raise", raiseAmount.value);
+  }
+  showRaisePanel.value = false;
 }
 
 function handleAction(action: ActionOption) {
-  if (action.type === "raise") {
-    raiseAmount.value = action.min || 0;
-    showRaiseSlider.value = !showRaiseSlider.value;
-    return;
-  }
   emit("action", action.type, action.amount);
-}
-
-function confirmRaise() {
-  emit("action", "raise", raiseAmount.value);
-  showRaiseSlider.value = false;
 }
 </script>
 
@@ -153,11 +198,16 @@ function confirmRaise() {
   cursor: pointer;
   min-height: 44px;
 }
+.action-btn.selected {
+  outline: 2px solid #ffd700;
+  outline-offset: 2px;
+}
 .btn-fold { background: #e53e3e; color: #fff; }
 .btn-check { background: #4a5568; color: #fff; }
 .btn-call { background: #3182ce; color: #fff; }
 .btn-raise { background: #d69e2e; color: #fff; }
 .btn-allin { background: #805ad5; color: #fff; }
+.btn-cancel { background: #718096; color: #fff; }
 .raise-control {
   display: flex;
   align-items: center;
