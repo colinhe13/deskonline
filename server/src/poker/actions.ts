@@ -1,6 +1,9 @@
 import { GameState, ActionOption } from "./types.js";
 
-export function getAvailableActions(state: GameState, userId: string): ActionOption[] {
+export function getAvailableActions(
+  state: GameState,
+  userId: string,
+): ActionOption[] {
   // No actions once the hand has ended (showdown/settled).
   if (state.phase === "showdown" || state.phase === "settled") return [];
 
@@ -45,7 +48,12 @@ export function getAvailableActions(state: GameState, userId: string): ActionOpt
   return actions;
 }
 
-export function isValidAction(state: GameState, userId: string, action: string, amount?: number): boolean {
+export function isValidAction(
+  state: GameState,
+  userId: string,
+  action: string,
+  amount?: number,
+): boolean {
   const available = getAvailableActions(state, userId);
   return available.some((a) => {
     if (a.type !== action) return false;

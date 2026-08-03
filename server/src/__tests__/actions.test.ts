@@ -1,17 +1,27 @@
 import { describe, it, expect } from "vitest";
 import { PokerEngine } from "../poker/engine.js";
 
-function makeEngine(playerCount: number, dealerIndex = 0, chips: number | number[] = 1000) {
+function makeEngine(
+  playerCount: number,
+  dealerIndex = 0,
+  chips: number | number[] = 1000,
+) {
   const players = Array.from({ length: playerCount }, (_, i) => ({
     userId: `u${i}`,
     username: `P${i}`,
     seatIndex: i,
-    chips: typeof chips === "number" ? chips : chips[i] ?? 1000,
+    chips: typeof chips === "number" ? chips : (chips[i] ?? 1000),
   }));
   const broadcasts: { type: string; payload: unknown }[] = [];
-  const engine = new PokerEngine(players, 1, 2, dealerIndex, (type, payload) => {
-    broadcasts.push({ type, payload });
-  });
+  const engine = new PokerEngine(
+    players,
+    1,
+    2,
+    dealerIndex,
+    (type, payload) => {
+      broadcasts.push({ type, payload });
+    },
+  );
   return { engine, broadcasts };
 }
 
@@ -21,7 +31,12 @@ describe("getAvailableActions", () => {
     engine.startHand();
     // Preflop UTG = u0 (dealer in 3-handed), toCall = big blind 2
     const actions = engine.getAvailableActionsForPlayer("u0");
-    expect(actions.map((a) => a.type)).toEqual(["fold", "call", "raise", "allin"]);
+    expect(actions.map((a) => a.type)).toEqual([
+      "fold",
+      "call",
+      "raise",
+      "allin",
+    ]);
     expect(actions.find((a) => a.type === "call")!.amount).toBe(2);
     const raise = actions.find((a) => a.type === "raise")!;
     expect(raise.min).toBe(4);
@@ -43,7 +58,12 @@ describe("getAvailableActions", () => {
     // Heads-up: dealer u0 is also SB, calls the big blind
     expect(engine.handleAction("u0", "call")).toBe(true);
     const actions = engine.getAvailableActionsForPlayer("u1");
-    expect(actions.map((a) => a.type)).toEqual(["check", "fold", "raise", "allin"]);
+    expect(actions.map((a) => a.type)).toEqual([
+      "check",
+      "fold",
+      "raise",
+      "allin",
+    ]);
     expect(actions.find((a) => a.type === "allin")!.amount).toBe(998);
     const raise = actions.find((a) => a.type === "raise")!;
     expect(raise.min).toBe(2);
