@@ -21,7 +21,10 @@ async function render(component: unknown, props: Record<string, unknown> = {}) {
 
 describe("UI smoke（SSR 渲染边界对抗）", () => {
   it("Card：有牌/无牌/背面/翻牌效果均不抛错", async () => {
-    const html = await render(Card, { card: { rank: "A", suit: "spades" }, visible: true });
+    const html = await render(Card, {
+      card: { rank: "A", suit: "spades" },
+      visible: true,
+    });
     expect(html).toContain("A");
     expect(html).toContain("♠");
 
@@ -85,6 +88,46 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(occupied).toContain("ALL IN");
     expect(occupied).toContain("房主");
     expect(occupied).toContain("winner");
+  });
+
+  it("PlayerSeat：AI 徽标与房主专属移除按钮", async () => {
+    const aiSeat = {
+      index: 1,
+      userId: "ai1",
+      username: "AI_XiaoZhi",
+      chips: 150,
+      buyIn: 150,
+      connected: true,
+      confirmed: true,
+      bet: 0,
+      folded: false,
+      allIn: false,
+      isDealer: false,
+      isAi: true,
+      cards: [],
+    };
+    const asHostViewer = await render(PlayerSeat, {
+      seat: aiSeat,
+      isHost: false,
+      isMe: false,
+      isCurrent: false,
+      isWinner: false,
+      canRemoveAi: true,
+    });
+    expect(asHostViewer).toContain("ai-badge");
+    expect(asHostViewer).toContain("AI");
+    expect(asHostViewer).toContain("移除");
+
+    const asRegularViewer = await render(PlayerSeat, {
+      seat: aiSeat,
+      isHost: false,
+      isMe: false,
+      isCurrent: false,
+      isWinner: false,
+      canRemoveAi: false,
+    });
+    expect(asRegularViewer).toContain("ai-badge");
+    expect(asRegularViewer).not.toContain("移除");
   });
 
   it("PokerTable：room/pokerState 为 null 与正常状态均不抛错", async () => {
@@ -163,7 +206,11 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
         ],
       },
       myUserId: "u1",
-      handResult: { reason: "showdown", winners: [{ userId: "u1", amount: 42 }], handNames: { u1: "同花" } },
+      handResult: {
+        reason: "showdown",
+        winners: [{ userId: "u1", amount: 42 }],
+        handNames: { u1: "同花" },
+      },
     });
     expect(full).toContain("#7");
     // 赢家高亮作用于牌桌座位（牌型文本展示在 TableView 横幅中，不在 PokerTable 渲染范围）
@@ -195,7 +242,11 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
   });
 
   it("ActionBar：无动作不渲染，有动作渲染第一层按钮", async () => {
-    const none = await render(ActionBar, { actions: [], pokerState: null, myUserId: null });
+    const none = await render(ActionBar, {
+      actions: [],
+      pokerState: null,
+      myUserId: null,
+    });
     expect(none.replace("<!---->", "").trim()).toBe("");
 
     const html = await render(ActionBar, {
@@ -213,7 +264,18 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
         currentPlayerIndex: 0,
         phase: "preflop",
         communityCards: [],
-        players: [{ userId: "u1", username: "alice", chips: 500, bet: 2, folded: false, allIn: false, isDealer: true, cards: [] }],
+        players: [
+          {
+            userId: "u1",
+            username: "alice",
+            chips: 500,
+            bet: 2,
+            folded: false,
+            allIn: false,
+            isDealer: true,
+            cards: [],
+          },
+        ],
       },
       myUserId: "u1",
     });
@@ -229,7 +291,9 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(none).not.toContain("flight-chip");
 
     const html = await render(ChipFlight, {
-      flights: [{ id: 1, from: { x: 20, y: 30 }, to: { x: 50, y: 50 }, flying: true }],
+      flights: [
+        { id: 1, from: { x: 20, y: 30 }, to: { x: 50, y: 50 }, flying: true },
+      ],
     });
     expect(html).toContain("flight-chip");
     expect(html).toContain("left:50%;top:50%");
@@ -241,8 +305,28 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
 
     const html = await render(RoomList, {
       rooms: [
-        { id: 1, playerCount: 2, maxPlayers: 9, confirmedCount: 2, smallBlind: 1, bigBlind: 2, minBuyIn: 150, maxBuyIn: 750, status: "waiting" },
-        { id: 2, playerCount: 5, maxPlayers: 9, confirmedCount: 0, smallBlind: 1, bigBlind: 2, minBuyIn: 150, maxBuyIn: 750, status: "playing" },
+        {
+          id: 1,
+          playerCount: 2,
+          maxPlayers: 9,
+          confirmedCount: 2,
+          smallBlind: 1,
+          bigBlind: 2,
+          minBuyIn: 150,
+          maxBuyIn: 750,
+          status: "waiting",
+        },
+        {
+          id: 2,
+          playerCount: 5,
+          maxPlayers: 9,
+          confirmedCount: 0,
+          smallBlind: 1,
+          bigBlind: 2,
+          minBuyIn: 150,
+          maxBuyIn: 750,
+          status: "playing",
+        },
       ],
     });
     expect(html).toContain("#1");
@@ -259,23 +343,89 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
 
   it("RoomSettingsModal / TransferHostModal / VoiceIndicator 渲染", async () => {
     const settings = await render(RoomSettingsModal, {
-      settings: { maxPlayers: 9, smallBlind: 1, bigBlind: 2, minBuyIn: 150, maxBuyIn: 750 },
+      settings: {
+        maxPlayers: 9,
+        smallBlind: 1,
+        bigBlind: 2,
+        minBuyIn: 150,
+        maxBuyIn: 750,
+      },
     });
     expect(settings).toContain("房间设置");
 
     const transfer = await render(TransferHostModal, {
       seats: [
-        { index: 0, userId: "u1", username: "alice", chips: 0, buyIn: 0, connected: true, confirmed: true },
-        { index: 1, userId: "u2", username: "bob", chips: 0, buyIn: 0, connected: true, confirmed: true },
+        {
+          index: 0,
+          userId: "u1",
+          username: "alice",
+          chips: 0,
+          buyIn: 0,
+          connected: true,
+          confirmed: true,
+        },
+        {
+          index: 1,
+          userId: "u2",
+          username: "bob",
+          chips: 0,
+          buyIn: 0,
+          connected: true,
+          confirmed: true,
+        },
+        {
+          index: 2,
+          userId: "ai1",
+          username: "AI_XiaoZhi",
+          chips: 0,
+          buyIn: 0,
+          connected: true,
+          confirmed: true,
+          isAi: true,
+        },
       ],
       myUserId: "u1",
     });
     expect(transfer).toContain("bob");
+    // AI 不能当房主，候选人列表必须排除
+    expect(transfer).not.toContain("AI_XiaoZhi");
 
-    const transferNone = await render(TransferHostModal, { seats: [], myUserId: "u1" });
+    const transferOnlyAi = await render(TransferHostModal, {
+      seats: [
+        {
+          index: 0,
+          userId: "u1",
+          username: "alice",
+          chips: 0,
+          buyIn: 0,
+          connected: true,
+          confirmed: true,
+        },
+        {
+          index: 1,
+          userId: "ai1",
+          username: "AI_XiaoZhi",
+          chips: 0,
+          buyIn: 0,
+          connected: true,
+          confirmed: true,
+          isAi: true,
+        },
+      ],
+      myUserId: "u1",
+    });
+    expect(transferOnlyAi).toContain("没有其他玩家可移交");
+
+    const transferNone = await render(TransferHostModal, {
+      seats: [],
+      myUserId: "u1",
+    });
     expect(transferNone).toContain("没有其他玩家可移交");
 
-    const voice = await render(VoiceIndicator, { speaking: true, muted: false });
+    const voice = await render(VoiceIndicator, {
+      speaking: true,
+      muted: false,
+    });
     expect(voice).toContain("speaking-ring");
   });
 });
