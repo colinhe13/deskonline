@@ -33,6 +33,13 @@ export class RoomManager {
     return undefined;
   }
 
+  findRoomByPendingUser(userId: string): Room | undefined {
+    for (const room of this.rooms.values()) {
+      if (room.pendingJoin?.userId === userId) return room;
+    }
+    return undefined;
+  }
+
   listRooms() {
     return [...this.rooms.values()].map((r) => r.toSummary());
   }

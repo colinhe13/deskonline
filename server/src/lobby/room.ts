@@ -18,6 +18,15 @@ export interface Seat {
   buyIn: number;
   connected: boolean;
   confirmed: boolean;
+  isAi: boolean;
+}
+
+export interface PendingJoin {
+  userId: string;
+  username: string;
+  seatIndex: number;
+  // The AI whose seat this human is waiting for.
+  aiUserId: string;
 }
 
 export type RoomStatus = "waiting" | "playing";
@@ -31,6 +40,13 @@ export class Room {
   entryOrder: string[] = [];
   // Set when the table pauses because a player busted; cleared when the game auto-resumes.
   autoResume = false;
+  // Players (AI) removed mid-hand; they leave once the current hand settles.
+  pendingLeaveUserIds: string[] = [];
+  // A human waiting for an AI seat to free up (full-room queue).
+  pendingJoin: PendingJoin | null = null;
+  // Seat index of the last dealer, kept across engine rebuilds so the button
+  // rotation survives hand-boundary reconstruction.
+  dealerSeatIndex: number | null = null;
 
   constructor(id: string, settings: RoomSettings) {
     this.id = id;
@@ -43,6 +59,7 @@ export class Room {
       buyIn: 0,
       connected: false,
       confirmed: false,
+      isAi: false,
     }));
   }
 
@@ -72,7 +89,19 @@ export class Room {
     return this.seats.filter((s) => s.userId !== null && s.confirmed);
   }
 
-  addPlayer(userId: string, username: string): Seat {
+  humanSeats(): Seat[] {
+    return this.seats.filter((s) => s.userId !== null && !s.isAi);
+  }
+
+  aiSeats(): Seat[] {
+    return this.seats.filter((s) => s.userId !== null && s.isAi);
+  }
+
+  hasHuman(): boolean {
+    return this.humanSeats().length > 0;
+  }
+
+  addPlayer(userId: string, username: string, isAi = false): Seat {
     if (this.isFull) throw new Error("ROOM_FULL");
     const seat = this.seats.find((s) => s.userId === null)!;
     seat.userId = userId;
@@ -81,6 +110,7 @@ export class Room {
     seat.buyIn = 0;
     seat.connected = true;
     seat.confirmed = false;
+    seat.isAi = isAi;
     this.entryOrder.push(userId);
     if (this.hostId === null) {
       this.hostId = userId;
@@ -98,6 +128,7 @@ export class Room {
     seat.buyIn = 0;
     seat.connected = false;
     seat.confirmed = false;
+    seat.isAi = false;
     this.entryOrder = this.entryOrder.filter((id) => id !== userId);
     if (this.hostId === userId) {
       this.hostId = this.entryOrder[0] ?? null;
@@ -125,6 +156,7 @@ export class Room {
     to.buyIn = from.buyIn;
     to.confirmed = from.confirmed;
     to.connected = from.connected;
+    to.isAi = from.isAi;
 
     from.userId = null;
     from.username = null;
@@ -132,6 +164,7 @@ export class Room {
     from.buyIn = 0;
     from.confirmed = false;
     from.connected = false;
+    from.isAi = false;
     return true;
   }
 
@@ -147,21 +180,6 @@ export class Room {
       }
     }
     return refunds;
-  }
-
-  // Confirmed seats that ran out of chips become unconfirmed so the player can
-  // rebuy (frontend shows the buy-in prompt via confirmed === false).
-  // Returns true if any seat was marked.
-  markBusted(): boolean {
-    let marked = false;
-    for (const seat of this.seats) {
-      if (seat.userId && seat.confirmed && seat.chips === 0) {
-        seat.confirmed = false;
-        seat.buyIn = 0;
-        marked = true;
-      }
-    }
-    return marked;
   }
 
   transferHost(targetUserId: string): boolean {
@@ -196,6 +214,7 @@ export class Room {
       minBuyIn: this.settings.minBuyIn,
       maxBuyIn: this.settings.maxBuyIn,
       status: this.status,
+      autoResume: this.autoResume,
     };
   }
 
@@ -210,6 +229,7 @@ export class Room {
         buyIn: s.buyIn,
         connected: s.connected,
         confirmed: s.confirmed,
+        isAi: s.isAi,
       })),
     };
   }

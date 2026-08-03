@@ -4,9 +4,18 @@ import { deductPoints, addPoints } from "../points/points.service.js";
 import { PokerEngine } from "../poker/engine.js";
 import { Room } from "./room.js";
 import { livekitService } from "../voice/livekit.service.js";
+import { isAiUserId, pickFreeAi } from "../ai/accounts.js";
+import { decideAiAction } from "../ai/decision.js";
+import { ActionOption } from "../poker/types.js";
+
+const SETTLEMENT_WINDOW_MS = 5000;
 
 export class LobbyHandler {
   private engines: Map<string, PokerEngine> = new Map();
+  // roomId -> userId of the AI currently awaiting an LLM decision.
+  private aiPending: Map<string, string> = new Map();
+  // Bumped whenever a room's engine is replaced, invalidating stale timers.
+  private engineGeneration: Map<string, number> = new Map();
 
   constructor(private gateway: WebSocketGateway) {}
 
@@ -50,6 +59,12 @@ export class LobbyHandler {
       case "room:list:request":
         this.sendRoomListToUser(userId);
         break;
+      case "ai:add":
+        await this.handleAddAi(userId);
+        break;
+      case "ai:remove":
+        await this.handleRemoveAi(userId, payload);
+        break;
       default:
         break;
     }
@@ -73,24 +88,74 @@ export class LobbyHandler {
     engine.revealCards(userId);
   }
 
-  private startEngine(room: Room) {
+  // ------------------------------------------------------------------
+  // Engine lifecycle
+  // ------------------------------------------------------------------
+
+  private bumpGeneration(roomId: string) {
+    this.engineGeneration.set(
+      roomId,
+      (this.engineGeneration.get(roomId) ?? 0) + 1,
+    );
+  }
+
+  // keepDealer=true reuses the previous dealer (voided hand); otherwise the
+  // button advances to the next seat in the rebuilt roster.
+  private startEngine(room: Room, keepDealer = false) {
     const players = room.confirmedSeats().map((s) => ({
       userId: s.userId!,
       username: s.username!,
       seatIndex: s.index,
       chips: s.chips,
+      isAi: s.isAi,
     }));
+
+    const dealerIndex = this.resolveDealerIndex(room, players, keepDealer);
+    room.dealerSeatIndex = null;
 
     const engine = new PokerEngine(
       players,
       room.settings.smallBlind,
       room.settings.bigBlind,
-      0,
+      dealerIndex,
       (type, payload) => this.broadcastEngineMessage(room, type, payload),
     );
 
     this.engines.set(room.id, engine);
+    this.bumpGeneration(room.id);
     engine.startHand();
+  }
+
+  private resolveDealerIndex(
+    room: Room,
+    players: { seatIndex: number }[],
+    keepDealer: boolean,
+  ): number {
+    if (players.length === 0) return 0;
+    const seatIndexes = players.map((p) => p.seatIndex);
+    const prevDealerSeat = room.dealerSeatIndex;
+    if (prevDealerSeat === null) return 0;
+    if (keepDealer && seatIndexes.includes(prevDealerSeat)) {
+      return players.findIndex((p) => p.seatIndex === prevDealerSeat);
+    }
+    const after = seatIndexes.filter((i) => i > prevDealerSeat);
+    const nextSeat =
+      after.length > 0 ? Math.min(...after) : Math.min(...seatIndexes);
+    const idx = players.findIndex((p) => p.seatIndex === nextSeat);
+    return idx >= 0 ? idx : 0;
+  }
+
+  private destroyEngine(room: Room) {
+    const engine = this.engines.get(room.id);
+    if (engine) {
+      const state = engine.getState();
+      room.dealerSeatIndex =
+        state.players[state.dealerIndex]?.seatIndex ?? null;
+      engine.destroy();
+      this.engines.delete(room.id);
+    }
+    this.aiPending.delete(room.id);
+    this.bumpGeneration(room.id);
   }
 
   private broadcastEngineMessage(room: Room, type: string, payload: unknown) {
@@ -98,8 +163,15 @@ export class LobbyHandler {
       const p = payload as {
         targetUserId: string;
         state: unknown;
-        availableActions: unknown;
+        availableActions: ActionOption[];
       };
+      if (isAiUserId(p.targetUserId)) {
+        // AI seats have no WS connection; drive their decisions server-side.
+        if (p.availableActions.length > 0) {
+          this.scheduleAiTurn(room, p.targetUserId);
+        }
+        return;
+      }
       this.gateway.sendToUser(p.targetUserId, "poker:update", {
         state: p.state,
         availableActions: p.availableActions,
@@ -114,27 +186,176 @@ export class LobbyHandler {
           if (seat) seat.chips = p.chips;
         }
       }
-      // Mark busted seats immediately so ejections during the settlement
-      // window cannot carry a 0-chip confirmed player into a new hand.
-      room.autoResume = room.markBusted();
-      setTimeout(() => {
-        const eng = this.engines.get(room.id);
-        if (eng && room.status === "playing") {
-          if (room.autoResume) {
-            // Busted players must rebuy before the table continues.
-            this.engines.delete(room.id);
-            eng.destroy();
-            room.status = "waiting";
-          } else if (!eng.nextHand()) {
-            room.status = "waiting";
-            this.engines.delete(room.id);
-            eng.destroy();
-          }
-          room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      // Busted humans become unconfirmed (their client shows the rebuy
+      // prompt); busted AI seats are handled at the hand boundary.
+      let humanBusted = false;
+      for (const seat of room.seats) {
+        if (seat.userId && seat.confirmed && seat.chips === 0 && !seat.isAi) {
+          seat.confirmed = false;
+          seat.buyIn = 0;
+          humanBusted = true;
         }
-      }, 5000);
+      }
+      room.autoResume = humanBusted;
+      this.aiPending.delete(room.id);
+      const gen = this.engineGeneration.get(room.id) ?? 0;
+      setTimeout(() => {
+        void this.handleHandEnd(room, gen);
+      }, SETTLEMENT_WINDOW_MS);
     }
   }
+
+  // ------------------------------------------------------------------
+  // AI turn scheduling
+  // ------------------------------------------------------------------
+
+  private scheduleAiTurn(room: Room, userId: string) {
+    const roomId = room.id;
+    if (this.aiPending.has(roomId)) return;
+    const engine = this.engines.get(roomId);
+    if (!engine) return;
+    const state = engine.getState();
+    if (state.phase === "showdown" || state.phase === "settled") return;
+    const current = state.players[state.currentPlayerIndex];
+    if (!current || current.userId !== userId) return;
+
+    this.aiPending.set(roomId, userId);
+    const actions = engine.getAvailableActionsForPlayer(userId);
+
+    decideAiAction(state, userId, actions)
+      .then(({ action, amount }) => {
+        const eng = this.engines.get(roomId);
+        // The table may have changed while the LLM was thinking.
+        if (eng !== engine) return;
+        const st = eng.getState();
+        if (st.phase === "showdown" || st.phase === "settled") return;
+        const cur = st.players[st.currentPlayerIndex];
+        if (!cur || cur.userId !== userId) return;
+
+        if (!eng.handleAction(userId, action, amount)) {
+          const fallback = actions.some((a) => a.type === "check")
+            ? "check"
+            : "fold";
+          eng.handleAction(userId, fallback);
+        }
+      })
+      .catch(() => {
+        const eng = this.engines.get(roomId);
+        if (eng === engine) {
+          const fallback = actions.some((a) => a.type === "check")
+            ? "check"
+            : "fold";
+          eng.handleAction(userId, fallback);
+        }
+      })
+      .finally(() => {
+        if (this.aiPending.get(roomId) === userId) {
+          this.aiPending.delete(roomId);
+        }
+      });
+  }
+
+  // ------------------------------------------------------------------
+  // Hand boundary: AI rebuy, seat changes, rebuild
+  // ------------------------------------------------------------------
+
+  // Applies queued seat changes at a hand boundary. Returns nothing; callers
+  // inspect the room afterwards.
+  private async settleSeatChanges(room: Room) {
+    // Busted AI seats auto-rebuy at the table minimum; leave when the AI
+    // account cannot pay.
+    for (const seat of room.seats) {
+      const uid = seat.userId;
+      if (!uid || !seat.isAi || !seat.confirmed || seat.chips !== 0) continue;
+      try {
+        await deductPoints(uid, room.settings.minBuyIn);
+        room.confirmBuyIn(uid, room.settings.minBuyIn);
+      } catch {
+        room.removePlayer(uid);
+      }
+    }
+
+    for (const uid of [...room.pendingLeaveUserIds]) {
+      const seat = room.findSeatByUserId(uid);
+      if (seat) {
+        const chips = seat.chips;
+        room.removePlayer(uid);
+        if (chips > 0) await addPoints(uid, chips);
+      }
+    }
+    room.pendingLeaveUserIds = [];
+
+    this.seatPendingJoin(room);
+  }
+
+  // Seats a queued human (full-room queue) once the yielded AI seat is free.
+  private seatPendingJoin(room: Room) {
+    const pj = room.pendingJoin;
+    if (!pj) return;
+    room.pendingJoin = null;
+    if (roomManager.findRoomByPlayer(pj.userId) || room.isFull) return;
+    room.addPlayer(pj.userId, pj.username);
+    if (room.seats[pj.seatIndex].userId === null) {
+      room.moveSeat(pj.userId, pj.seatIndex);
+    }
+  }
+
+  private async handleHandEnd(room: Room, gen: number) {
+    if (this.engineGeneration.get(room.id) !== gen) return;
+    const engine = this.engines.get(room.id);
+    if (!engine || room.status !== "playing") return;
+
+    this.destroyEngine(room);
+    await this.settleSeatChanges(room);
+
+    if (!room.hasHuman()) {
+      await this.removeAllAi(room);
+      room.status = "waiting";
+      room.autoResume = false;
+      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.broadcastLobbyList();
+      return;
+    }
+
+    const needsConfirm =
+      room.humanSeats().some((s) => !s.confirmed) || room.autoResume;
+    if (needsConfirm) {
+      room.status = "waiting";
+      room.autoResume = true;
+      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.broadcastLobbyList();
+      return;
+    }
+
+    const roster = room.confirmedSeats().filter((s) => s.chips > 0);
+    if (roster.length < 2) {
+      room.status = "waiting";
+      room.autoResume = false;
+      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.broadcastLobbyList();
+      return;
+    }
+
+    room.status = "playing";
+    this.startEngine(room);
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+  }
+
+  // Removes every AI seat, refunding chips. Enforces "no pure-AI tables".
+  private async removeAllAi(room: Room) {
+    for (const seat of room.aiSeats()) {
+      const uid = seat.userId!;
+      const chips = seat.chips;
+      room.removePlayer(uid);
+      if (chips > 0) await addPoints(uid, chips);
+    }
+    room.pendingLeaveUserIds = [];
+    room.pendingJoin = null;
+  }
+
+  // ------------------------------------------------------------------
+  // Room join / buy-in / leave
+  // ------------------------------------------------------------------
 
   private async handleJoinRoom(
     userId: string,
@@ -162,10 +383,7 @@ export class LobbyHandler {
     }
 
     if (room.isFull) {
-      this.gateway.sendToUser(userId, "room:error", {
-        code: "ROOM_FULL",
-        message: "房间已满",
-      });
+      await this.handleFullRoomJoin(userId, username, room);
       return;
     }
 
@@ -181,6 +399,54 @@ export class LobbyHandler {
     this.broadcastLobbyList();
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
     this.sendVoiceToken(userId, username, room.id);
+  }
+
+  // Full room: a human can take an AI seat. During a hand they queue until
+  // the hand settles; while waiting the swap happens immediately.
+  private async handleFullRoomJoin(
+    userId: string,
+    username: string,
+    room: Room,
+  ) {
+    const yieldSeat = room.aiSeats()[0];
+    if (!yieldSeat) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "ROOM_FULL",
+        message: "房间已满",
+      });
+      return;
+    }
+
+    if (room.status === "waiting") {
+      const aiUserId = yieldSeat.userId!;
+      const chips = room.removePlayer(aiUserId);
+      if (chips > 0) await addPoints(aiUserId, chips);
+      room.addPlayer(userId, username);
+      this.broadcastLobbyList();
+      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.sendVoiceToken(userId, username, room.id);
+      return;
+    }
+
+    if (room.pendingJoin) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "ROOM_FULL",
+        message: "房间已满，已有人在排队",
+      });
+      return;
+    }
+
+    room.pendingJoin = {
+      userId,
+      username,
+      seatIndex: yieldSeat.index,
+      aiUserId: yieldSeat.userId!,
+    };
+    room.pendingLeaveUserIds.push(yieldSeat.userId!);
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.gateway.sendToUser(userId, "room:join-queued", {
+      seatIndex: yieldSeat.index,
+    });
   }
 
   private async handleConfirmBuyIn(userId: string, payload: unknown) {
@@ -230,12 +496,14 @@ export class LobbyHandler {
     this.tryResumeGame(room);
   }
 
-  // After a busted-pause, auto-resume once enough confirmed players have chips.
+  // After a pause (busted rebuy or queued human), resume once every seated
+  // human is confirmed with chips.
   private tryResumeGame(room: Room) {
     if (!room.autoResume || room.status !== "waiting") return;
     const confirmed = room.confirmedSeats();
     if (confirmed.length < 2) return;
     if (confirmed.some((s) => s.chips <= 0)) return;
+    if (room.humanSeats().some((s) => !s.confirmed)) return;
     room.autoResume = false;
     room.status = "playing";
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
@@ -304,6 +572,18 @@ export class LobbyHandler {
     }
 
     room.settings = { maxPlayers, smallBlind, bigBlind, minBuyIn, maxBuyIn };
+
+    // AI seats re-confirm automatically at the new minimum buy-in so a
+    // settings change never strands them unconfirmed.
+    for (const seat of room.aiSeats()) {
+      try {
+        await deductPoints(seat.userId!, room.settings.minBuyIn);
+        room.confirmBuyIn(seat.userId!, room.settings.minBuyIn);
+      } catch {
+        room.removePlayer(seat.userId!);
+      }
+    }
+
     this.broadcastLobbyList();
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
   }
@@ -321,14 +601,25 @@ export class LobbyHandler {
     }
 
     const p = payload as { targetUserId?: string };
-    if (!p?.targetUserId || !room.transferHost(p.targetUserId)) {
+    const targetSeat = p?.targetUserId
+      ? room.findSeatByUserId(p.targetUserId)
+      : undefined;
+    if (!targetSeat) {
       this.gateway.sendToUser(userId, "room:error", {
         code: "INVALID_TARGET",
         message: "目标玩家不在房间中",
       });
       return;
     }
+    if (targetSeat.isAi) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "INVALID_TARGET",
+        message: "不能把房主移交给 AI",
+      });
+      return;
+    }
 
+    room.transferHost(p!.targetUserId!);
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
   }
 
@@ -386,11 +677,27 @@ export class LobbyHandler {
   }
 
   private async handleLeaveRoom(userId: string) {
+    const pendingRoom = roomManager.findRoomByPendingUser(userId);
+    if (pendingRoom) {
+      this.cancelPendingJoin(pendingRoom, userId);
+    }
+
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
 
     this.gateway.sendToUser(userId, "voice:disconnect", {});
     await this.ejectPlayer(room, userId);
+  }
+
+  private cancelPendingJoin(room: Room, userId: string) {
+    const pj = room.pendingJoin;
+    if (!pj || pj.userId !== userId) return;
+    room.pendingJoin = null;
+    // The AI marked to yield for this queue entry stays at the table.
+    room.pendingLeaveUserIds = room.pendingLeaveUserIds.filter(
+      (id) => id !== pj.aiUserId,
+    );
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
   }
 
   // Removes a player, settling chips and keeping the system room alive.
@@ -410,16 +717,31 @@ export class LobbyHandler {
     await addPoints(userId, chips);
 
     if (engine && wasInHand) {
-      engine.destroy();
-      this.engines.delete(room.id);
-      if (room.autoResume) {
-        // A busted-pause is pending: wait for the rebuy instead of resuming.
+      this.destroyEngine(room);
+      await this.settleSeatChanges(room);
+
+      if (!room.hasHuman()) {
+        await this.removeAllAi(room);
         room.status = "waiting";
-      } else if (room.confirmedCount >= 2) {
-        this.startEngine(room); // continue with a fresh hand among remaining players
+        room.autoResume = false;
       } else {
-        room.status = "waiting";
+        const needsConfirm =
+          room.humanSeats().some((s) => !s.confirmed) || room.autoResume;
+        if (needsConfirm) {
+          room.status = "waiting";
+          room.autoResume = true;
+        } else if (room.confirmedCount >= 2) {
+          room.status = "playing";
+          // A voided hand replays with the same dealer; a settled hand advances.
+          this.startEngine(room, !handSettled);
+        } else {
+          room.status = "waiting";
+        }
       }
+    } else if (!room.hasHuman()) {
+      await this.removeAllAi(room);
+      room.status = "waiting";
+      room.autoResume = false;
     }
 
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
@@ -450,6 +772,98 @@ export class LobbyHandler {
       }
     }, 60_000);
   }
+
+  // ------------------------------------------------------------------
+  // AI management (host-only)
+  // ------------------------------------------------------------------
+
+  private async handleAddAi(userId: string) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+
+    if (room.hostId !== userId) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_HOST",
+        message: "只有房主可以添加 AI",
+      });
+      return;
+    }
+    if (room.isFull) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "ROOM_FULL",
+        message: "房间已满，无法添加 AI",
+      });
+      return;
+    }
+
+    const account = pickFreeAi(room);
+    if (!account) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NO_FREE_AI",
+        message: "没有空闲的 AI 账号",
+      });
+      return;
+    }
+
+    room.addPlayer(account.id, account.username, true);
+    try {
+      await deductPoints(account.id, room.settings.minBuyIn);
+    } catch {
+      room.removePlayer(account.id);
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "AI_INSUFFICIENT_POINTS",
+        message: "AI 账号积分不足",
+      });
+      return;
+    }
+    room.confirmBuyIn(account.id, room.settings.minBuyIn);
+
+    this.broadcastLobbyList();
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.tryResumeGame(room);
+  }
+
+  private async handleRemoveAi(userId: string, payload: unknown) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+
+    if (room.hostId !== userId) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_HOST",
+        message: "只有房主可以移除 AI",
+      });
+      return;
+    }
+
+    const p = payload as { targetUserId?: string };
+    const targetId = p?.targetUserId;
+    const seat = targetId ? room.findSeatByUserId(targetId) : undefined;
+    if (!seat || !seat.isAi) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_AI",
+        message: "目标不是 AI 玩家",
+      });
+      return;
+    }
+
+    if (room.status === "playing") {
+      // Mid-hand removal takes effect once the current hand settles.
+      if (!room.pendingLeaveUserIds.includes(targetId!)) {
+        room.pendingLeaveUserIds.push(targetId!);
+      }
+      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      return;
+    }
+
+    const chips = room.removePlayer(targetId!);
+    if (chips > 0) await addPoints(targetId!, chips);
+    this.broadcastLobbyList();
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+  }
+
+  // ------------------------------------------------------------------
+  // Misc
+  // ------------------------------------------------------------------
 
   broadcastLobbyList() {
     this.gateway.broadcastAll("room:list", { rooms: roomManager.listRooms() });

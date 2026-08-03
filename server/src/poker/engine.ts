@@ -28,6 +28,7 @@ export class PokerEngine {
       username: string;
       seatIndex: number;
       chips: number;
+      isAi?: boolean;
     }[],
     smallBlind: number,
     bigBlind: number,
@@ -223,6 +224,16 @@ export class PokerEngine {
       }
     }
 
+    const putIn = player.bet - betBefore;
+    if (action === "fold") s.actionLog.push(`${player.username} fold`);
+    else if (action === "check") s.actionLog.push(`${player.username} check`);
+    else if (action === "call")
+      s.actionLog.push(`${player.username} call ${putIn}`);
+    else if (action === "raise")
+      s.actionLog.push(`${player.username} raise ${putIn}`);
+    else if (action === "allin")
+      s.actionLog.push(`${player.username} allin ${putIn}`);
+
     player.hasActed = true;
     // A genuine raise reopens the action for every other active player
     if (player.bet > prevBet) {
@@ -299,6 +310,8 @@ export class PokerEngine {
         this.settleHands();
         return;
     }
+
+    s.actionLog.push(`--- ${s.phase} ---`);
 
     if (canAct.length <= 1) {
       // Run out remaining cards automatically
