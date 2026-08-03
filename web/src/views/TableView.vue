@@ -26,7 +26,14 @@
       />
     </main>
 
-    <ActionBar v-if="game.isMyTurn" :actions="game.availableActions" @action="handleAction" />
+    <ActionBar
+      v-if="game.isMyTurn"
+      :actions="game.availableActions"
+      :pot="game.pokerState?.pot ?? 0"
+      :big-blind="game.pokerState?.bigBlind ?? 0"
+      :chips="myChips"
+      @action="handleAction"
+    />
 
     <ConfirmBuyIn
       v-if="needConfirmBuyIn"
@@ -106,13 +113,17 @@ const canStart = computed(() => (game.room?.confirmedCount ?? 0) >= 2);
 const needConfirmBuyIn = computed(
   () => game.room?.status === "waiting" && mySeat.value && !mySeat.value.confirmed,
 );
+const myChips = computed(() => {
+  if (!game.pokerState) return 0;
+  return game.pokerState.players.find((p) => p.userId === game.myUserId)?.chips ?? 0;
+});
 
 const settingsForm = computed(() => ({
   maxPlayers: game.room?.maxPlayers ?? 9,
-  smallBlind: game.room?.smallBlind ?? 10,
-  bigBlind: game.room?.bigBlind ?? 20,
-  minBuyIn: game.room?.minBuyIn ?? 200,
-  maxBuyIn: game.room?.maxBuyIn ?? 2000,
+  smallBlind: game.room?.smallBlind ?? 1,
+  bigBlind: game.room?.bigBlind ?? 2,
+  minBuyIn: game.room?.minBuyIn ?? 150,
+  maxBuyIn: game.room?.maxBuyIn ?? 750,
 }));
 
 function showError(message: string) {
