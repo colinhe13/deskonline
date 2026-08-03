@@ -94,13 +94,14 @@ export class LobbyHandler {
           if (seat) seat.chips = p.chips;
         }
       }
+      // Mark busted seats immediately so ejections during the settlement
+      // window cannot carry a 0-chip confirmed player into a new hand.
+      room.autoResume = room.markBusted();
       setTimeout(() => {
         const eng = this.engines.get(room.id);
         if (eng && room.status === "playing") {
-          const busted = room.markBusted();
-          if (busted) {
+          if (room.autoResume) {
             // Busted players must rebuy before the table continues.
-            room.autoResume = true;
             this.engines.delete(room.id);
             eng.destroy();
             room.status = "waiting";
@@ -304,6 +305,7 @@ export class LobbyHandler {
     }
 
     room.status = "playing";
+    room.autoResume = false;
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
     this.startEngine(room);
   }
@@ -335,7 +337,10 @@ export class LobbyHandler {
     if (engine && wasInHand) {
       engine.destroy();
       this.engines.delete(room.id);
-      if (room.confirmedCount >= 2) {
+      if (room.autoResume) {
+        // A busted-pause is pending: wait for the rebuy instead of resuming.
+        room.status = "waiting";
+      } else if (room.confirmedCount >= 2) {
         this.startEngine(room); // continue with a fresh hand among remaining players
       } else {
         room.status = "waiting";
