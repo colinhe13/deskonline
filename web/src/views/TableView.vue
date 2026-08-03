@@ -134,12 +134,17 @@ function handleRoomState(payload: unknown) {
 function handlePokerUpdate(payload: unknown) {
   const p = payload as { state: PokerState; availableActions: ActionOption[] };
   game.setPokerState(p.state, p.availableActions);
-  game.setHandResult(null);
+  // Only clear the winner banner when a new hand begins (preflop). The engine
+  // re-broadcasts a "settled" state right after showdown, which must not wipe
+  // the result display.
+  if (p.state.phase === "preflop") {
+    game.setHandResult(null);
+  }
 }
 
 function handleHandResult(payload: unknown) {
   game.setHandResult(payload as HandResultInfo);
-  setTimeout(() => game.setHandResult(null), 4000);
+  setTimeout(() => game.setHandResult(null), 5000);
 }
 
 function handleRoomError(payload: unknown) {
