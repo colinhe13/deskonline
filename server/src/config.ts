@@ -10,4 +10,9 @@ export const config = {
     process.env.LIVEKIT_PUBLIC_URL || process.env.LIVEKIT_URL || "",
   livekitApiKey: process.env.LIVEKIT_API_KEY || "",
   livekitApiSecret: process.env.LIVEKIT_API_SECRET || "",
+  aiBaseUrl: process.env.AI_BASE_URL || "https://api.deepseek.com",
+  aiModel: process.env.AI_MODEL || "deepseek-v4-flash",
+  aiApiKey: process.env.AI_API_KEY || "",
+  aiTimeoutMs: parseInt(process.env.AI_TIMEOUT_MS || "10000", 10),
+  aiAccounts: process.env.AI_ACCOUNTS || "AI_XiaoZhi,AI_LaoWang,AI_MeiLing",
 };
