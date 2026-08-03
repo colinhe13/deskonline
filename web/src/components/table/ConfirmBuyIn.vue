@@ -19,9 +19,13 @@
           v-model.number="amount"
           class="amount-input"
         />
-        <button class="confirm-btn" :disabled="!valid" @click="confirm">确认带入</button>
+        <button class="confirm-btn" :disabled="!valid" @click="confirm">
+          确认带入
+        </button>
       </div>
-      <p v-if="!valid" class="error">金额需在 {{ minBuyIn }} - {{ maxBuyIn }} 之间</p>
+      <p v-if="!valid" class="error">
+        金额需在 {{ minBuyIn }} - {{ maxBuyIn }} 之间
+      </p>
     </div>
   </div>
 </template>
@@ -33,8 +37,12 @@ const props = defineProps<{ minBuyIn: number; maxBuyIn: number }>();
 const emit = defineEmits<{ confirm: [amount: number] }>();
 
 const amount = ref(props.minBuyIn);
-const step = computed(() => Math.max(1, Math.floor((props.maxBuyIn - props.minBuyIn) / 100)));
-const valid = computed(() => amount.value >= props.minBuyIn && amount.value <= props.maxBuyIn);
+const step = computed(() =>
+  Math.max(1, Math.floor((props.maxBuyIn - props.minBuyIn) / 100)),
+);
+const valid = computed(
+  () => amount.value >= props.minBuyIn && amount.value <= props.maxBuyIn,
+);
 
 function confirm() {
   if (valid.value) emit("confirm", amount.value);

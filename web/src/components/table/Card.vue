@@ -32,8 +32,12 @@ const props = withDefaults(
   { effect: "deal", delay: 0 },
 );
 
-const suitSymbol = computed(() => (props.card ? SUIT_SYMBOLS[props.card.suit] : ""));
-const animClass = computed(() => (props.effect === "flip" ? "card-flip" : "card-deal"));
+const suitSymbol = computed(() =>
+  props.card ? SUIT_SYMBOLS[props.card.suit] : "",
+);
+const animClass = computed(() =>
+  props.effect === "flip" ? "card-flip" : "card-deal",
+);
 const cardStyle = computed(() => {
   const style: Record<string, string> = {};
   if (props.visible && props.card) {
@@ -80,7 +84,13 @@ const cardStyle = computed(() => {
   overflow: hidden;
 }
 .card-front {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 42%), var(--card-color, #2563eb);
+  background:
+    linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.35) 0%,
+      rgba(255, 255, 255, 0) 42%
+    ),
+    var(--card-color, #2563eb);
   border: 1px solid rgba(0, 0, 0, 0.3);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }

@@ -16,7 +16,12 @@
       <div class="brand-line"></div>
       <form @submit.prevent="handleSubmit">
         <div class="field">
-          <input v-model="username" type="text" placeholder="用户名" autocomplete="username" />
+          <input
+            v-model="username"
+            type="text"
+            placeholder="用户名"
+            autocomplete="username"
+          />
         </div>
         <div class="field">
           <input
@@ -89,7 +94,11 @@ async function handleSubmit() {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(90% 70% at 50% -10%, var(--felt-0) 0%, rgba(34, 112, 74, 0) 55%),
+    radial-gradient(
+      90% 70% at 50% -10%,
+      var(--felt-0) 0%,
+      rgba(34, 112, 74, 0) 55%
+    ),
     radial-gradient(130% 100% at 50% 0%, var(--bg-1) 0%, var(--bg-0) 62%);
 }
 
@@ -130,18 +139,47 @@ async function handleSubmit() {
   opacity: 0.08;
   animation: suit-float 16s ease-in-out infinite alternate;
 }
-.suit-1 { left: 8%; top: 14%; transform: rotate(-18deg); }
-.suit-2 { right: 10%; top: 22%; color: var(--danger); animation-delay: -4s; transform: rotate(14deg); }
-.suit-3 { left: 14%; bottom: 16%; color: var(--danger); animation-delay: -8s; transform: rotate(12deg); }
-.suit-4 { right: 14%; bottom: 12%; animation-delay: -12s; transform: rotate(-10deg); }
+.suit-1 {
+  left: 8%;
+  top: 14%;
+  transform: rotate(-18deg);
+}
+.suit-2 {
+  right: 10%;
+  top: 22%;
+  color: var(--danger);
+  animation-delay: -4s;
+  transform: rotate(14deg);
+}
+.suit-3 {
+  left: 14%;
+  bottom: 16%;
+  color: var(--danger);
+  animation-delay: -8s;
+  transform: rotate(12deg);
+}
+.suit-4 {
+  right: 14%;
+  bottom: 12%;
+  animation-delay: -12s;
+  transform: rotate(-10deg);
+}
 
 @keyframes orb-drift {
-  from { transform: translate(0, 0) scale(1); }
-  to { transform: translate(40px, 30px) scale(1.12); }
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(40px, 30px) scale(1.12);
+  }
 }
 @keyframes suit-float {
-  from { transform: translateY(0) rotate(-12deg); }
-  to { transform: translateY(-28px) rotate(12deg); }
+  from {
+    transform: translateY(0) rotate(-12deg);
+  }
+  to {
+    transform: translateY(-28px) rotate(12deg);
+  }
 }
 
 .login-card {
@@ -261,7 +299,9 @@ async function handleSubmit() {
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .error {

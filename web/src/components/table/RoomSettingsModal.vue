@@ -6,7 +6,9 @@
         <label>
           最大人数
           <select v-model.number="form.maxPlayers">
-            <option v-for="n in [2, 3, 4, 5, 6, 7, 8, 9]" :key="n" :value="n">{{ n }}</option>
+            <option v-for="n in [2, 3, 4, 5, 6, 7, 8, 9]" :key="n" :value="n">
+              {{ n }}
+            </option>
           </select>
         </label>
         <label>
@@ -27,7 +29,9 @@
         </label>
         <p class="hint">修改设置后，所有玩家需要重新确认带入金额。</p>
         <div class="modal-actions">
-          <button type="button" class="btn-ghost" @click="$emit('close')">取消</button>
+          <button type="button" class="btn-ghost" @click="$emit('close')">
+            取消
+          </button>
           <button type="submit" class="btn-primary">保存</button>
         </div>
       </form>
@@ -70,7 +74,11 @@ function save() {
   z-index: var(--z-modal);
 }
 .modal {
-  background: linear-gradient(170deg, rgba(26, 48, 36, 0.95), rgba(12, 28, 19, 0.96));
+  background: linear-gradient(
+    170deg,
+    rgba(26, 48, 36, 0.95),
+    rgba(12, 28, 19, 0.96)
+  );
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: 1.6rem 1.5rem;

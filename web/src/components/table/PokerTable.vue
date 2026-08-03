@@ -29,7 +29,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import type { RoomDetail, PokerState, SeatInfo, PokerPlayer, HandResultInfo } from "../../stores/game";
+import type {
+  RoomDetail,
+  PokerState,
+  SeatInfo,
+  PokerPlayer,
+  HandResultInfo,
+} from "../../stores/game";
 import PlayerSeat from "./PlayerSeat.vue";
 import CommunityCards from "./CommunityCards.vue";
 import PotDisplay from "./PotDisplay.vue";

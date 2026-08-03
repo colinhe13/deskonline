@@ -18,7 +18,9 @@
         <p v-if="candidates.length === 0" class="empty">没有其他玩家可移交</p>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn-ghost" @click="$emit('close')">取消</button>
+        <button type="button" class="btn-ghost" @click="$emit('close')">
+          取消
+        </button>
       </div>
     </div>
   </div>
@@ -50,7 +52,11 @@ const candidates = computed(() =>
   z-index: var(--z-modal);
 }
 .modal {
-  background: linear-gradient(170deg, rgba(26, 48, 36, 0.95), rgba(12, 28, 19, 0.96));
+  background: linear-gradient(
+    170deg,
+    rgba(26, 48, 36, 0.95),
+    rgba(12, 28, 19, 0.96)
+  );
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: 1.6rem 1.5rem;

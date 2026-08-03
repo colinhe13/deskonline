@@ -11,10 +11,17 @@
   >
     <template v-if="seat.userId">
       <div class="cards-row">
-        <Card v-for="(card, i) in seat.cards" :key="i" :card="card" :visible="true" />
+        <Card
+          v-for="(card, i) in seat.cards"
+          :key="i"
+          :card="card"
+          :visible="true"
+        />
       </div>
       <div class="avatar-wrap">
-        <div class="avatar" :style="avatarStyle">{{ seat.username?.charAt(0).toUpperCase() }}</div>
+        <div class="avatar" :style="avatarStyle">
+          {{ seat.username?.charAt(0).toUpperCase() }}
+        </div>
         <span v-if="seat.isDealer" class="dealer-btn">D</span>
       </div>
       <div class="seat-info">
@@ -132,7 +139,11 @@ const avatarStyle = computed(() => {
 }
 .winner .avatar {
   border-color: var(--gold);
-  background: linear-gradient(135deg, var(--gold), var(--gold-strong)) !important;
+  background: linear-gradient(
+    135deg,
+    var(--gold),
+    var(--gold-strong)
+  ) !important;
   animation: winner-avatar-pulse 1.1s ease-in-out infinite;
 }
 @keyframes winner-avatar-pulse {

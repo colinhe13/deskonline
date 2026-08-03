@@ -71,7 +71,11 @@ onUnmounted(() => {
 .lobby-page {
   min-height: 100dvh;
   background:
-    radial-gradient(90% 60% at 50% -10%, var(--felt-0) 0%, rgba(34, 112, 74, 0) 55%),
+    radial-gradient(
+      90% 60% at 50% -10%,
+      var(--felt-0) 0%,
+      rgba(34, 112, 74, 0) 55%
+    ),
     radial-gradient(130% 100% at 50% 0%, var(--bg-1) 0%, var(--bg-0) 62%);
 }
 .lobby-header {
@@ -117,7 +121,11 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: radial-gradient(circle at center, var(--gold-strong) 0 38%, var(--gold) 40% 100%);
+  background: radial-gradient(
+    circle at center,
+    var(--gold-strong) 0 38%,
+    var(--gold) 40% 100%
+  );
   border: 2px dashed rgba(0, 0, 0, 0.4);
   box-shadow: 0 0 6px rgba(240, 199, 94, 0.5);
 }

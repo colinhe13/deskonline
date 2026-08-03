@@ -13,7 +13,9 @@
         class="action-btn btn-call"
         @click="handleAction(callAction)"
       >
-        {{ callAction.type === "check" ? "过牌" : `跟注 (${callAction.amount})` }}
+        {{
+          callAction.type === "check" ? "过牌" : `跟注 (${callAction.amount})`
+        }}
       </button>
       <button
         v-if="raiseAction"
@@ -34,7 +36,9 @@
     <Transition name="raise-panel">
       <div v-if="showRaisePanel" class="raise-panel">
         <div class="actions">
-          <button class="action-btn btn-cancel" @click="closeRaisePanel">取消</button>
+          <button class="action-btn btn-cancel" @click="closeRaisePanel">
+            取消
+          </button>
           <button
             v-if="showThirdPot"
             class="action-btn btn-raise"
@@ -104,7 +108,8 @@ const raiseAmount = ref(0);
 const selected = ref<QuickSelection>("manual");
 
 const me = computed(
-  () => props.pokerState?.players.find((p) => p.userId === props.myUserId) ?? null,
+  () =>
+    props.pokerState?.players.find((p) => p.userId === props.myUserId) ?? null,
 );
 const chips = computed(() => me.value?.chips ?? 0);
 const playerBet = computed(() => me.value?.bet ?? 0);
@@ -117,8 +122,12 @@ const foldAction = computed(() => props.actions.find((a) => a.type === "fold"));
 const callAction = computed(() =>
   props.actions.find((a) => a.type === "call" || a.type === "check"),
 );
-const raiseAction = computed(() => props.actions.find((a) => a.type === "raise"));
-const allInAction = computed(() => props.actions.find((a) => a.type === "allin"));
+const raiseAction = computed(() =>
+  props.actions.find((a) => a.type === "raise"),
+);
+const allInAction = computed(() =>
+  props.actions.find((a) => a.type === "allin"),
+);
 const raiseMin = computed(() => raiseAction.value?.min || 0);
 const raiseMax = computed(() => raiseAction.value?.max || 0);
 
@@ -225,12 +234,23 @@ function handleAction(action: ActionOption) {
   outline-offset: 2px;
   box-shadow: var(--shadow-glow-gold);
 }
-.btn-fold { background: linear-gradient(160deg, #e05252, #b23a3a); }
+.btn-fold {
+  background: linear-gradient(160deg, #e05252, #b23a3a);
+}
 .btn-check,
-.btn-cancel { background: linear-gradient(160deg, #5a6572, #434c56); }
-.btn-call { background: linear-gradient(160deg, var(--info), #2f6aa8); }
-.btn-raise { background: linear-gradient(160deg, var(--gold), var(--gold-strong)); color: #1c1304; }
-.btn-allin { background: linear-gradient(160deg, var(--allin), #6d3fce); }
+.btn-cancel {
+  background: linear-gradient(160deg, #5a6572, #434c56);
+}
+.btn-call {
+  background: linear-gradient(160deg, var(--info), #2f6aa8);
+}
+.btn-raise {
+  background: linear-gradient(160deg, var(--gold), var(--gold-strong));
+  color: #1c1304;
+}
+.btn-allin {
+  background: linear-gradient(160deg, var(--allin), #6d3fce);
+}
 .raise-panel {
   display: flex;
   flex-direction: column;

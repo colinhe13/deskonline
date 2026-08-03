@@ -42,7 +42,9 @@ function chipStyle(f: ChipFlightItem) {
   return {
     left: `${pos.x}%`,
     top: `${pos.y}%`,
-    transform: f.flying ? "translate(-50%, -50%) scale(0.6)" : "translate(-50%, -50%)",
+    transform: f.flying
+      ? "translate(-50%, -50%) scale(0.6)"
+      : "translate(-50%, -50%)",
     opacity: f.flying ? 0 : 1,
   };
 }
@@ -60,7 +62,11 @@ function chipStyle(f: ChipFlightItem) {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, var(--gold-strong) 0 38%, var(--gold) 40% 100%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--gold-strong) 0 38%,
+    var(--gold) 40% 100%
+  );
   border: 2px dashed rgba(0, 0, 0, 0.35);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
   transition:

@@ -45,7 +45,11 @@ const displayAmount = useCountUp(computed(() => props.amount));
 .chip-a {
   left: 1px;
   top: 6px;
-  background: radial-gradient(circle at 50% 50%, var(--gold-strong) 0 38%, var(--gold) 40% 100%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--gold-strong) 0 38%,
+    var(--gold) 40% 100%
+  );
 }
 .chip-b {
   left: 8px;
@@ -55,7 +59,11 @@ const displayAmount = useCountUp(computed(() => props.amount));
 .chip-c {
   left: 15px;
   top: 0;
-  background: radial-gradient(circle at 50% 50%, var(--success) 0 38%, #2f855a 40% 100%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--success) 0 38%,
+    #2f855a 40% 100%
+  );
 }
 .pot-label {
   font-size: var(--fs-xs);

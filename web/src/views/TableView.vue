@@ -8,13 +8,19 @@
         <template v-if="isHost && game.room?.status === 'waiting'">
           <button @click="showSettings = true">设置</button>
           <button @click="showTransfer = true">移交房主</button>
-          <button class="start-btn" :disabled="!canStart" @click="startGame">开始游戏</button>
+          <button class="start-btn" :disabled="!canStart" @click="startGame">
+            开始游戏
+          </button>
         </template>
       </div>
     </header>
 
-    <p v-if="game.room?.status === 'waiting' && !canStart && isHost" class="start-hint">
-      至少需要 2 名玩家确认带入后才能开始（已确认 {{ game.room?.confirmedCount ?? 0 }}）
+    <p
+      v-if="game.room?.status === 'waiting' && !canStart && isHost"
+      class="start-hint"
+    >
+      至少需要 2 名玩家确认带入后才能开始（已确认
+      {{ game.room?.confirmedCount ?? 0 }}）
     </p>
 
     <main class="table-main">
@@ -62,7 +68,11 @@
     </Transition>
 
     <div v-if="game.handResult" class="hand-result-banner">
-      <div v-for="w in game.handResult.winners" :key="w.userId" class="winner-block">
+      <div
+        v-for="w in game.handResult.winners"
+        :key="w.userId"
+        class="winner-block"
+      >
         <span class="winner-name">{{ winnerName(w.userId) }}</span>
         <span class="winner-hand">
           {{
@@ -100,12 +110,22 @@ import VoicePanel from "../components/voice/VoicePanel.vue";
 import ConfirmBuyIn from "../components/table/ConfirmBuyIn.vue";
 import RoomSettingsModal from "../components/table/RoomSettingsModal.vue";
 import TransferHostModal from "../components/table/TransferHostModal.vue";
-import type { RoomDetail, PokerState, ActionOption, HandResultInfo } from "../stores/game";
+import type {
+  RoomDetail,
+  PokerState,
+  ActionOption,
+  HandResultInfo,
+} from "../stores/game";
 
 const auth = useAuthStore();
 const game = useGameStore();
 const router = useRouter();
-const { isReconnecting: reconnecting, send, onMessage, offMessage } = useWebSocket();
+const {
+  isReconnecting: reconnecting,
+  send,
+  onMessage,
+  offMessage,
+} = useWebSocket();
 
 const showSettings = ref(false);
 const showTransfer = ref(false);
@@ -113,11 +133,16 @@ const errorMsg = ref("");
 const revealedMine = ref(false);
 let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
-const isHost = computed(() => game.room?.hostId != null && game.room.hostId === game.myUserId);
-const mySeat = computed(() => game.room?.seats.find((s) => s.userId === game.myUserId));
+const isHost = computed(
+  () => game.room?.hostId != null && game.room.hostId === game.myUserId,
+);
+const mySeat = computed(() =>
+  game.room?.seats.find((s) => s.userId === game.myUserId),
+);
 const canStart = computed(() => (game.room?.confirmedCount ?? 0) >= 2);
 const needConfirmBuyIn = computed(
-  () => game.room?.status === "waiting" && mySeat.value && !mySeat.value.confirmed,
+  () =>
+    game.room?.status === "waiting" && mySeat.value && !mySeat.value.confirmed,
 );
 
 const settingsForm = computed(() => ({
@@ -245,7 +270,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(85% 55% at 50% 30%, var(--felt-0) 0%, rgba(34, 112, 74, 0) 60%),
+    radial-gradient(
+      85% 55% at 50% 30%,
+      var(--felt-0) 0%,
+      rgba(34, 112, 74, 0) 60%
+    ),
     radial-gradient(130% 100% at 50% 0%, var(--bg-1) 0%, var(--bg-0) 62%);
 }
 .table-header {
@@ -289,7 +318,11 @@ onUnmounted(() => {
   letter-spacing: 0.06em;
 }
 .start-btn {
-  background: linear-gradient(160deg, var(--gold), var(--gold-strong)) !important;
+  background: linear-gradient(
+    160deg,
+    var(--gold),
+    var(--gold-strong)
+  ) !important;
   color: #1c1304 !important;
   font-weight: 600;
   border-color: transparent !important;
@@ -360,7 +393,11 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   z-index: var(--z-banner);
-  background: linear-gradient(180deg, rgba(10, 26, 17, 0.94), rgba(10, 26, 17, 0.88));
+  background: linear-gradient(
+    180deg,
+    rgba(10, 26, 17, 0.94),
+    rgba(10, 26, 17, 0.88)
+  );
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(240, 199, 94, 0.3);
@@ -381,7 +418,12 @@ onUnmounted(() => {
   top: 0;
   bottom: 0;
   width: 55%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background: linear-gradient(
+    105deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
   animation: banner-shine 2.6s ease-in-out infinite;
   pointer-events: none;
 }
