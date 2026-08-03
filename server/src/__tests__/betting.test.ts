@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateSidePots } from "../poker/betting.js";
+import { calculateSidePots, isBettingRoundComplete } from "../poker/betting.js";
 import { PlayerState } from "../poker/types.js";
 
 function makePlayer(userId: string, totalBet: number, folded: boolean, allIn: boolean): PlayerState {
@@ -72,5 +72,40 @@ describe("calculateSidePots", () => {
     expect(mainPot.eligible).not.toContain("a");
     expect(mainPot.eligible).toContain("b");
     expect(mainPot.eligible).toContain("c");
+  });
+});
+
+describe("isBettingRoundComplete", () => {
+  const active = (bet: number, hasActed = false, allIn = false, folded = false): PlayerState => ({
+    ...makePlayer(`p${Math.random()}`, bet, folded, allIn),
+    bet,
+    hasActed,
+  });
+
+  it("round is NOT complete while exactly one actionable player remains", () => {
+    const players = [
+      { ...active(100, true), allIn: true },
+      active(2, false), // BB has not acted yet
+    ];
+    expect(isBettingRoundComplete(players, 100)).toBe(false);
+  });
+
+  it("round is complete when nobody can act (all all-in)", () => {
+    const players = [active(100, true, true), active(100, false, true)];
+    expect(isBettingRoundComplete(players, 100)).toBe(true);
+  });
+
+  it("round is complete when every actionable player acted with matching bet", () => {
+    const players = [active(50, true), active(50, true)];
+    expect(isBettingRoundComplete(players, 50)).toBe(true);
+  });
+
+  it("folded and all-in players are excluded from the actionable set", () => {
+    const players = [
+      active(20, false, false, true), // folded
+      active(50, true, true), // all-in
+      active(50, true), // acted and matched
+    ];
+    expect(isBettingRoundComplete(players, 50)).toBe(true);
   });
 });
