@@ -26,8 +26,16 @@ export const useAuthStore = defineStore("auth", () => {
     router.push("/lobby");
   }
 
-  async function register(username: string, password: string) {
-    const res = await http.post("/api/auth/register", { username, password });
+  async function register(
+    username: string,
+    password: string,
+    registerCode: string,
+  ) {
+    const res = await http.post("/api/auth/register", {
+      username,
+      password,
+      registerCode,
+    });
     token.value = res.data.token;
     user.value = res.data.user;
     localStorage.setItem("token", res.data.token);

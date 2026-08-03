@@ -31,6 +31,14 @@
             autocomplete="current-password"
           />
         </div>
+        <div v-if="isRegister" class="field">
+          <input
+            v-model="registerCode"
+            type="password"
+            placeholder="注册口令"
+            autocomplete="off"
+          />
+        </div>
         <p v-if="error" class="error">{{ error }}</p>
         <button type="submit" :disabled="loading" class="submit-btn">
           <span v-if="loading" class="btn-spinner" aria-hidden="true"></span>
@@ -53,6 +61,7 @@ import { useAuthStore } from "../stores/auth";
 const auth = useAuthStore();
 const username = ref("");
 const password = ref("");
+const registerCode = ref("");
 const isRegister = ref(false);
 const loading = ref(false);
 const error = ref("");
@@ -63,10 +72,14 @@ async function handleSubmit() {
     error.value = "请填写用户名和密码";
     return;
   }
+  if (isRegister.value && !registerCode.value) {
+    error.value = "请填写注册口令";
+    return;
+  }
   loading.value = true;
   try {
     if (isRegister.value) {
-      await auth.register(username.value, password.value);
+      await auth.register(username.value, password.value, registerCode.value);
     } else {
       await auth.login(username.value, password.value);
     }
@@ -75,6 +88,7 @@ async function handleSubmit() {
     const code = e.response?.data?.error;
     if (code === "USERNAME_TAKEN") error.value = "用户名已被占用";
     else if (code === "INVALID_CREDENTIALS") error.value = "用户名或密码错误";
+    else if (code === "REGISTER_CODE_INVALID") error.value = "注册口令不正确";
     else if (code === "VALIDATION_ERROR")
       error.value = "输入格式不正确（用户名3-32位字母数字下划线，密码至少6位）";
     else error.value = "网络错误，请重试";
