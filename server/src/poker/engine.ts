@@ -14,6 +14,7 @@ export interface HandResult {
 export class PokerEngine {
   private state: GameState;
   private deck: Card[] = [];
+  private lastHandWinners: Set<string> = new Set();
   private onBroadcast: (type: string, payload: unknown) => void;
 
   constructor(
@@ -37,6 +38,7 @@ export class PokerEngine {
         allIn: false,
         hasActed: false,
         cards: [],
+        cardsRevealed: false,
         isDealer: false,
         isSmallBlind: false,
         isBigBlind: false,
@@ -59,7 +61,7 @@ export class PokerEngine {
     const stateCopy = JSON.parse(JSON.stringify(this.state)) as GameState;
     const isShowdown = stateCopy.phase === "showdown" || stateCopy.phase === "settled";
     for (const p of stateCopy.players) {
-      if (p.userId !== userId && !isShowdown) {
+      if (p.userId !== userId && !(isShowdown && p.cardsRevealed)) {
         p.cards = [];
       }
     }
@@ -74,6 +76,7 @@ export class PokerEngine {
     s.sidePots = [];
     s.currentBet = 0;
     s.minRaise = s.bigBlind;
+    this.lastHandWinners = new Set();
 
     this.deck = shuffle(createDeck());
 
@@ -84,6 +87,7 @@ export class PokerEngine {
       p.allIn = false;
       p.hasActed = false;
       p.cards = [];
+      p.cardsRevealed = false;
       p.isDealer = false;
       p.isSmallBlind = false;
       p.isBigBlind = false;
@@ -307,6 +311,8 @@ export class PokerEngine {
     if (activePlayers.length === 1) {
       const winner = activePlayers[0];
       winner.chips += s.pot;
+      // The winner of a fold does NOT auto-reveal; they may choose to via revealCards.
+      this.lastHandWinners = new Set([winner.userId]);
       const result: HandResult = {
         winners: [{ userId: winner.userId, amount: s.pot }],
         showdownCards: {},
@@ -333,6 +339,8 @@ export class PokerEngine {
         const allCards = [...p.cards, ...s.communityCards];
         const result = evaluateHand(allCards);
         showdownCards[p.userId] = p.cards;
+        // Reaching showdown makes the hand public to every player at the table.
+        p.cardsRevealed = true;
         evaluated.set(p.userId, result);
 
         if (!bestResult || compareHands(result, bestResult) > 0) {
@@ -358,6 +366,7 @@ export class PokerEngine {
       if (ev) handNames[userId] = describeHand(ev);
     }
 
+    this.lastHandWinners = new Set(winnings.keys());
     const result: HandResult = {
       winners: [...winnings.entries()].map(([userId, amount]) => ({ userId, amount })),
       showdownCards,
@@ -381,6 +390,19 @@ export class PokerEngine {
 
   getAvailableActionsForPlayer(userId: string) {
     return getAvailableActions(this.state, userId);
+  }
+
+  // Lets the winner of a fold win reveal their hole cards to the table.
+  // Rejected unless the hand is settled and the player actually won it.
+  revealCards(userId: string): boolean {
+    const s = this.state;
+    if (s.phase !== "settled") return false;
+    if (!this.lastHandWinners.has(userId)) return false;
+    const player = s.players.find((p) => p.userId === userId);
+    if (!player || player.cardsRevealed) return false;
+    player.cardsRevealed = true;
+    this.broadcastState();
+    return true;
   }
 
   private broadcastState() {

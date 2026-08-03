@@ -1,0 +1,119 @@
+import { describe, it, expect } from "vitest";
+import { PokerEngine } from "../poker/engine.js";
+
+function makeEngine(playerCount: number, dealerIndex = 0, chips: number | number[] = 1000) {
+  const players = Array.from({ length: playerCount }, (_, i) => ({
+    userId: `u${i}`,
+    username: `P${i}`,
+    seatIndex: i,
+    chips: typeof chips === "number" ? chips : chips[i] ?? 1000,
+  }));
+  const broadcasts: { type: string; payload: unknown }[] = [];
+  const engine = new PokerEngine(players, 1, 2, dealerIndex, (type, payload) => {
+    broadcasts.push({ type, payload });
+  });
+  return { engine, broadcasts };
+}
+
+function cardCountFor(engine: PokerEngine, viewerId: string, targetId: string): number {
+  const view = engine.getStateForPlayer(viewerId);
+  return view.players.find((p) => p.userId === targetId)!.cards.length;
+}
+
+describe("hand card privacy", () => {
+  it("preflop: other players' cards are never visible", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(cardCountFor(engine, "u1", "u0")).toBe(0);
+    expect(cardCountFor(engine, "u0", "u1")).toBe(0);
+    expect(cardCountFor(engine, "u0", "u0")).toBe(2); // own cards always visible
+  });
+
+  it("showdown: participants' cards are public, folded players stay hidden", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    // u0 (UTG/dealer) all-in, u1 all-in to match, u2 folds
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "allin", 999)).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    const s = engine.getState();
+    expect(s.phase).toBe("settled");
+
+    // A viewer (u2, folded) sees both showdown participants' cards...
+    expect(cardCountFor(engine, "u2", "u0")).toBe(2);
+    expect(cardCountFor(engine, "u2", "u1")).toBe(2);
+    // ...but not their own folded hand from another viewer's perspective
+    expect(cardCountFor(engine, "u0", "u2")).toBe(0);
+    expect(cardCountFor(engine, "u1", "u2")).toBe(0);
+  });
+
+  it("fold win: winner's cards stay hidden until they choose to reveal", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+
+    expect(cardCountFor(engine, "u1", "u0")).toBe(0); // hidden after the win
+    expect(cardCountFor(engine, "u2", "u0")).toBe(0);
+    expect(cardCountFor(engine, "u0", "u0")).toBe(2); // winner sees their own
+
+    // A folded player cannot reveal anyone's cards
+    expect(engine.revealCards("u1")).toBe(false);
+    expect(engine.revealCards("u2")).toBe(false);
+    expect(cardCountFor(engine, "u1", "u0")).toBe(0);
+
+    // The winner reveals -> now visible to everyone
+    expect(engine.revealCards("u0")).toBe(true);
+    expect(cardCountFor(engine, "u1", "u0")).toBe(2);
+    expect(cardCountFor(engine, "u2", "u0")).toBe(2);
+
+    // Revealing twice is rejected
+    expect(engine.revealCards("u0")).toBe(false);
+  });
+
+  it("reveal is rejected outside the settled phase", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.revealCards("u0")).toBe(false); // preflop
+  });
+
+  it("startHand resets reveal state for the next hand", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    // heads of state: u0 wins by fold, then reveals
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.revealCards("u0")).toBe(true);
+
+    expect(engine.nextHand()).toBe(true);
+    expect(engine.getState().phase).toBe("preflop");
+    for (const p of engine.getState().players) {
+      expect(p.cardsRevealed).toBe(false);
+    }
+    // u1 no longer sees u0's new hand
+    expect(cardCountFor(engine, "u1", "u0")).toBe(0);
+  });
+
+  it("fold win with a side pot: only the winner may reveal", () => {
+    const { engine, broadcasts } = makeEngine(3, 0, [100, 1000, 1000]);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 100)).toBe(true);
+    expect(engine.handleAction("u1", "call", 99)).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+
+    const handResults = broadcasts.filter((b) => b.type === "poker:hand_result");
+    const payload = handResults[0]?.payload as { reason: string; winners: { userId: string }[] };
+    // u0 vs u1 showdown -> reason showdown, winner revealed automatically
+    expect(payload.reason).toBe("showdown");
+    for (const p of engine.getState().players) {
+      if (!p.folded) expect(p.cardsRevealed).toBe(true);
+    }
+    // Even the loser (a showdown participant) cannot "reveal" further
+    const loser = payload.winners[0].userId === "u0" ? "u1" : "u0";
+    expect(engine.revealCards(loser)).toBe(false);
+  });
+});

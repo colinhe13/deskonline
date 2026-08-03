@@ -31,6 +31,8 @@ export interface PlayerState {
   isDealer: boolean;
   isSmallBlind: boolean;
   isBigBlind: boolean;
+  // Whether this player's cards are public to everyone after the hand settles.
+  cardsRevealed: boolean;
 }
 
 export interface SidePot {

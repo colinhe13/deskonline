@@ -36,6 +36,9 @@ export class LobbyHandler {
       case "poker:action":
         this.handlePokerAction(userId, payload);
         break;
+      case "poker:reveal":
+        this.handleRevealCards(userId);
+        break;
       case "reconnect":
         this.handleReconnect(userId, username);
         break;
@@ -55,6 +58,14 @@ export class LobbyHandler {
 
     const p = payload as { action: string; amount?: number };
     engine.handleAction(userId, p.action, p.amount);
+  }
+
+  private handleRevealCards(userId: string) {
+    const room = roomManager.findRoomByPlayer(userId);
+    if (!room) return;
+    const engine = this.engines.get(room.id);
+    if (!engine) return;
+    engine.revealCards(userId);
   }
 
   private startEngine(room: Room) {
