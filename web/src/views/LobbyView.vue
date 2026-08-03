@@ -8,12 +8,21 @@
           <span class="chip-icon" aria-hidden="true"></span>
           <span class="points">{{ displayPoints }}</span>
         </span>
+        <button class="leaderboard-btn" @click="showLeaderboard = true">
+          排行榜
+        </button>
         <button class="logout-btn" @click="auth.logout()">退出</button>
       </div>
     </header>
     <main class="lobby-content">
       <RoomList :rooms="lobby.rooms" @join="joinRoom" />
     </main>
+    <Transition name="modal">
+      <LeaderboardModal
+        v-if="showLeaderboard"
+        @close="showLeaderboard = false"
+      />
+    </Transition>
     <Transition name="toast">
       <div v-if="toastMsg" class="lobby-toast" :class="toastKind">
         {{ toastMsg }}
@@ -31,6 +40,7 @@ import { useGameStore } from "../stores/game";
 import { useWebSocket } from "../composables/useWebSocket";
 import { useCountUp } from "../composables/useCountUp";
 import RoomList from "../components/lobby/RoomList.vue";
+import LeaderboardModal from "../components/lobby/LeaderboardModal.vue";
 import type { RoomSummary } from "../stores/lobby";
 import type { RoomDetail } from "../stores/game";
 
@@ -62,6 +72,7 @@ function joinRoom(room: RoomSummary) {
 
 const toastMsg = ref("");
 const toastKind = ref<"error" | "info">("info");
+const showLeaderboard = ref(false);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showToast(message: string, kind: "error" | "info") {
@@ -175,6 +186,32 @@ onUnmounted(() => {
   border-color: var(--gold);
   background: rgba(240, 199, 94, 0.1);
 }
+.leaderboard-btn {
+  padding: 0.4rem 0.9rem;
+  min-height: 44px;
+  background: rgba(240, 199, 94, 0.12);
+  color: var(--gold-soft);
+  border: 1px solid rgba(240, 199, 94, 0.35);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast),
+    border-color var(--dur-fast),
+    background var(--dur-fast);
+}
+.leaderboard-btn:hover {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: rgba(240, 199, 94, 0.2);
+}
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
 .lobby-content {
   padding: 1.5rem 2rem;
   max-width: 800px;
@@ -237,6 +274,11 @@ onUnmounted(() => {
     font-size: var(--fs-xs);
   }
   .logout-btn {
+    min-height: 40px;
+    padding: 0.3rem 0.7rem;
+    font-size: var(--fs-xs);
+  }
+  .leaderboard-btn {
     min-height: 40px;
     padding: 0.3rem 0.7rem;
     font-size: var(--fs-xs);

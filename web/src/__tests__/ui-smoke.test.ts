@@ -9,6 +9,7 @@ import PotDisplay from "../components/table/PotDisplay.vue";
 import ActionBar from "../components/table/ActionBar.vue";
 import ChipFlight from "../components/table/ChipFlight.vue";
 import RoomList from "../components/lobby/RoomList.vue";
+import LeaderboardModal from "../components/lobby/LeaderboardModal.vue";
 import ConfirmBuyIn from "../components/table/ConfirmBuyIn.vue";
 import RoomSettingsModal from "../components/table/RoomSettingsModal.vue";
 import TransferHostModal from "../components/table/TransferHostModal.vue";
@@ -416,6 +417,13 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(html).toContain("游戏中");
     expect(html).toContain("--i:1;");
     expect(html).toContain("观战 3");
+  });
+
+  it("LeaderboardModal：SSR 下渲染标题与加载态（onMounted 拉取不执行）", async () => {
+    const html = await render(LeaderboardModal, {});
+    expect(html).toContain("积分排行榜");
+    expect(html).toContain("加载中");
+    expect(html).toContain("关闭");
   });
 
   it("ConfirmBuyIn：边界金额校验渲染", async () => {
