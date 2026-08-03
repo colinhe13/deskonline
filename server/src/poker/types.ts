@@ -35,6 +35,8 @@ export interface PlayerState {
   isBigBlind: boolean;
   // Whether this player's cards are public to everyone after the hand settles.
   cardsRevealed: boolean;
+  // True for AI-driven seats; lets clients render the AI badge during a hand.
+  isAi?: boolean;
 }
 
 export interface SidePot {
@@ -55,6 +57,9 @@ export interface GameState {
   currentBet: number;
   minRaise: number;
   handNumber: number;
+  // Human-readable log of public events (blinds, actions, phase changes).
+  // Used as the GTO decision history; contains no private information.
+  actionLog: string[];
 }
 
 export enum HandRank {

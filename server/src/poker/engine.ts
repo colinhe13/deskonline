@@ -60,6 +60,7 @@ export class PokerEngine {
       currentBet: 0,
       minRaise: bigBlind,
       handNumber: 1,
+      actionLog: [],
     };
   }
 
@@ -87,6 +88,7 @@ export class PokerEngine {
     s.sidePots = [];
     s.currentBet = 0;
     s.minRaise = s.bigBlind;
+    s.actionLog = [];
     this.lastHandWinners = new Set();
 
     this.deck = shuffle(createDeck());
@@ -128,6 +130,10 @@ export class PokerEngine {
     this.postBlind(activePlayers[sbIdx], s.smallBlind);
     this.postBlind(activePlayers[bbIdx], s.bigBlind);
     s.currentBet = s.bigBlind;
+    s.actionLog.push(
+      `SB (${activePlayers[sbIdx].username}) posts ${activePlayers[sbIdx].bet}`,
+      `BB (${activePlayers[bbIdx].username}) posts ${activePlayers[bbIdx].bet}`,
+    );
 
     // Preflop: action starts left of BB (or dealer in heads-up)
     if (n === 2) {
@@ -174,6 +180,7 @@ export class PokerEngine {
     if (!isValidAction(s, userId, action, amount)) return false;
 
     const prevBet = s.currentBet;
+    const betBefore = player.bet;
 
     switch (action) {
       case "fold":
