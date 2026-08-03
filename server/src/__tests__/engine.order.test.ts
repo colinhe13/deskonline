@@ -116,4 +116,44 @@ describe("PokerEngine betting round order", () => {
     // u0 already acted via the raise and no one re-raised, so round completes -> flop
     expect(s.phase).toBe("flop");
   });
+
+  it("showdown settles with hand names and offers no further actions", () => {
+    const { engine, broadcasts } = makeEngine(2, 0);
+    engine.startHand();
+
+    // Both players check/call every street until the hand settles.
+    let guard = 0;
+    while (engine.getState().phase !== "settled" && guard++ < 50) {
+      const s = engine.getState();
+      const uid = currentUserId(s);
+      const actions = engine.getAvailableActionsForPlayer(uid);
+      const check = actions.find((a) => a.type === "check");
+      const call = actions.find((a) => a.type === "call");
+      if (check) engine.handleAction(uid, "check");
+      else if (call) engine.handleAction(uid, "call", call.amount);
+      else break;
+    }
+
+    const s = engine.getState();
+    expect(s.phase).toBe("settled");
+
+    const results = broadcasts.filter((b) => b.type === "poker:hand_result");
+    expect(results.length).toBe(1);
+    const payload = results[0].payload as {
+      reason: string;
+      winners: { userId: string }[];
+      handNames: Record<string, string>;
+    };
+    expect(payload.reason).toBe("showdown");
+    expect(payload.winners.length).toBeGreaterThan(0);
+    for (const w of payload.winners) {
+      expect(typeof payload.handNames[w.userId]).toBe("string");
+      expect(payload.handNames[w.userId].length).toBeGreaterThan(0);
+    }
+
+    // After settlement no player should be offered any further action.
+    for (const p of s.players) {
+      expect(engine.getAvailableActionsForPlayer(p.userId)).toEqual([]);
+    }
+  });
 });

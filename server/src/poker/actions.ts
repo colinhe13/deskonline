@@ -1,6 +1,9 @@
 import { GameState, ActionOption } from "./types.js";
 
 export function getAvailableActions(state: GameState, userId: string): ActionOption[] {
+  // No actions once the hand has ended (showdown/settled).
+  if (state.phase === "showdown" || state.phase === "settled") return [];
+
   const player = state.players.find((p) => p.userId === userId);
   if (!player) return [];
 
