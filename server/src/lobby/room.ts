@@ -21,14 +21,6 @@ export interface Seat {
   isAi: boolean;
 }
 
-export interface PendingJoin {
-  userId: string;
-  username: string;
-  seatIndex: number;
-  // The AI whose seat this human is waiting for.
-  aiUserId: string;
-}
-
 export interface Spectator {
   userId: string;
   username: string;
@@ -47,8 +39,6 @@ export class Room {
   autoResume = false;
   // Players (AI) removed mid-hand; they leave once the current hand settles.
   pendingLeaveUserIds: string[] = [];
-  // A human waiting for an AI seat to free up (full-room queue).
-  pendingJoin: PendingJoin | null = null;
   // Users watching the table without occupying a seat.
   spectators: Spectator[] = [];
   // Seat index of the last dealer, kept across engine rebuilds so the button

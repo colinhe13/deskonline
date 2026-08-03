@@ -104,7 +104,7 @@ function resetRoom(room: Room) {
   room.entryOrder = [];
   room.status = "waiting";
   room.autoResume = false;
-  room.pendingJoin = null;
+  room.spectators = [];
   room.pendingLeaveUserIds = [];
   room.dealerSeatIndex = null;
 }
@@ -409,115 +409,177 @@ describe("lobby AI lifecycle", () => {
   });
 
   // ----------------------------------------------------------------
-  // Full-room seat yielding (满员让座)
+  // Spectating (观战)
   // ----------------------------------------------------------------
 
-  describe("full-room seat yielding", () => {
-    it("swaps the lowest AI seat immediately while waiting", async () => {
-      room.settings.maxPlayers = 2;
-      await joinAndConfirm("h1", "alice");
-      await addAiAs("h1");
-      expect(room.isFull).toBe(true);
-      const aiId = room.aiSeats()[0]!.userId!;
-      vi.mocked(addPoints).mockClear();
-
-      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
-
-      expect(room.findSeatByUserId(aiId)).toBeUndefined();
-      expect(addPoints).toHaveBeenCalledWith(aiId, room.settings.minBuyIn);
-      const newSeat = room.findSeatByUserId("h2")!;
-      expect(newSeat.confirmed).toBe(false); // must confirm the buy-in
-      room.settings.maxPlayers = 9;
-    });
-
-    it("queues the human during a hand and seats them after it", async () => {
-      vi.useFakeTimers();
-      try {
-        room.settings.maxPlayers = 2;
-        await joinAndConfirm("h1", "alice");
-        await addAiAs("h1");
-        room.status = "playing";
-        handler["startEngine"](room);
-        const ai = room.aiSeats()[0]!;
-
-        await handler.handleMessage("h2", "bob", "room:join", {
-          roomId: "main",
-        });
-        expect(room.pendingJoin?.userId).toBe("h2");
-        expect(room.pendingLeaveUserIds).toContain(ai.userId);
-        expect(
-          gateway.sent.some(
-            (m) => m.userId === "h2" && m.type === "room:join-queued",
-          ),
-        ).toBe(true);
-
-        // Finish the hand (heads-up: dealer h1 is SB and acts first).
-        const aiId = ai.userId!;
-        handler["engines"].get(room.id)!.handleAction("h1", "fold");
-        // Settlement window elapses: AI leaves, human takes the seat.
-        await vi.advanceTimersByTimeAsync(5001);
-        expect(room.findSeatByUserId(aiId)).toBeUndefined();
-        const humanSeat = room.findSeatByUserId("h2")!;
-        expect(humanSeat.confirmed).toBe(false);
-        expect(room.status).toBe("waiting");
-        expect(room.autoResume).toBe(true);
-
-        const stateMsg = gateway.sent
-          .filter((m) => m.type === "room:state")
-          .at(-1);
-        expect(
-          (stateMsg!.payload as { room: { autoResume: boolean } }).room
-            .autoResume,
-        ).toBe(true);
-
-        await handler.handleMessage("h2", "bob", "room:confirm", {
-          buyIn: room.settings.minBuyIn,
-        });
-        expect(room.status).toBe("playing");
-        expect(room.autoResume).toBe(false);
-        const engine = handler["engines"].get(room.id)!;
-        expect(engine.getState().players.map((p) => p.userId)).toContain("h2");
-        room.settings.maxPlayers = 9;
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("cancels the queue when the human leaves", async () => {
-      room.settings.maxPlayers = 2;
+  describe("spectating", () => {
+    async function startPlayingWithAi() {
       await joinAndConfirm("h1", "alice");
       await addAiAs("h1");
       room.status = "playing";
       handler["startEngine"](room);
-      const ai = room.aiSeats()[0]!;
+    }
+
+    it("join mid-hand enters as spectator with a card-hidden snapshot", async () => {
+      await startPlayingWithAi();
+      gateway.sent.length = 0;
 
       await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
-      await handler.handleMessage("h2", "bob", "room:leave", {});
 
-      expect(room.pendingJoin).toBeNull();
-      expect(room.pendingLeaveUserIds).not.toContain(ai.userId);
-      expect(room.findSeatByUserId(ai.userId!)).toBeDefined();
+      expect(room.isSpectator("h2")).toBe(true);
+      expect(room.findSeatByUserId("h2")).toBeUndefined();
+      expect(
+        gateway.sent.some(
+          (m) => m.userId === "h2" && m.type === "room:error",
+        ),
+      ).toBe(false);
+
+      const update = gateway.sent.find(
+        (m) => m.userId === "h2" && m.type === "poker:update",
+      );
+      expect(update).toBeDefined();
+      const payload = update!.payload as {
+        state: { players: { cards: unknown[] }[] };
+        availableActions: unknown[];
+      };
+      expect(payload.availableActions).toEqual([]);
+      for (const p of payload.state.players) expect(p.cards).toEqual([]);
+
+      // Spectators get no voice token.
+      expect(
+        gateway.sent.some(
+          (m) => m.userId === "h2" && m.type === "voice:token",
+        ),
+      ).toBe(false);
+    });
+
+    it("full waiting room enters as spectator without displacing anyone", async () => {
+      room.settings.maxPlayers = 2;
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      expect(room.isFull).toBe(true);
+      vi.mocked(addPoints).mockClear();
+
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
+
+      expect(room.isSpectator("h2")).toBe(true);
+      // The AI seat is untouched — no refund, no swap.
+      expect(room.aiSeats()).toHaveLength(1);
+      expect(addPoints).not.toHaveBeenCalled();
       room.settings.maxPlayers = 9;
     });
 
-    it("still rejects when full with no AI to yield", async () => {
-      room.settings.maxPlayers = 2;
-      await joinAndConfirm("h1", "alice");
-      await joinAndConfirm("h2", "bob");
+    it("engine updates reach spectators with no hole cards", async () => {
+      await startPlayingWithAi();
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
       gateway.sent.length = 0;
 
-      await handler.handleMessage("h3", "carol", "room:join", {
-        roomId: "main",
-      });
+      const engine = handler["engines"].get(room.id)!;
+      engine.handleAction("h1", "raise", 4);
+
+      const toSpectator = gateway.sent.filter(
+        (m) => m.type === "poker:update" && m.userIds?.includes("h2"),
+      );
+      expect(toSpectator.length).toBeGreaterThan(0);
+      for (const m of toSpectator) {
+        const payload = m.payload as {
+          state: { players: { cards: unknown[] }[] };
+          availableActions: unknown[];
+        };
+        expect(payload.availableActions).toEqual([]);
+        for (const p of payload.state.players) expect(p.cards).toEqual([]);
+      }
+    });
+
+    it("hand results are broadcast to spectators", async () => {
+      await startPlayingWithAi();
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
+      gateway.sent.length = 0;
+
+      handler["engines"].get(room.id)!.handleAction("h1", "fold");
+
       expect(
         gateway.sent.some(
           (m) =>
-            m.userId === "h3" &&
-            m.type === "room:error" &&
-            (m.payload as { code: string }).code === "ROOM_FULL",
+            m.type === "poker:hand_result" && m.userIds?.includes("h2"),
+        ),
+      ).toBe(true);
+    });
+
+    it("spectator seats themselves once a seat frees up", async () => {
+      room.settings.maxPlayers = 2;
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
+      expect(room.isSpectator("h2")).toBe(true);
+
+      // Still spectating while the room is full.
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
+      expect(room.isSpectator("h2")).toBe(true);
+
+      const aiId = room.aiSeats()[0]!.userId!;
+      await handler.handleMessage("h1", "alice", "ai:remove", {
+        targetUserId: aiId,
+      });
+
+      gateway.sent.length = 0;
+      await handler.handleMessage("h2", "bob", "room:join", {
+        roomId: "main",
+        seatIndex: 1,
+      });
+      expect(room.isSpectator("h2")).toBe(false);
+      const seat = room.findSeatByUserId("h2")!;
+      expect(seat.index).toBe(1);
+      expect(seat.confirmed).toBe(false); // must confirm the buy-in
+      expect(
+        gateway.sent.some(
+          (m) => m.userId === "h2" && m.type === "voice:token",
         ),
       ).toBe(true);
       room.settings.maxPlayers = 9;
+    });
+
+    it("room:leave and disconnect remove spectators immediately", async () => {
+      await startPlayingWithAi();
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
+      expect(room.isSpectator("h2")).toBe(true);
+
+      handler.handleDisconnect("h2");
+      expect(room.isSpectator("h2")).toBe(false);
+      // Players are untouched by spectator cleanup.
+      expect(room.playerCount).toBe(2);
+
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
+      expect(room.isSpectator("h2")).toBe(true);
+      await handler.handleMessage("h2", "bob", "room:leave", {});
+      expect(room.isSpectator("h2")).toBe(false);
+    });
+
+    it("reconnect restores the spectator snapshot without voice", async () => {
+      await startPlayingWithAi();
+      await handler.handleMessage("h2", "bob", "room:join", { roomId: "main" });
+      gateway.sent.length = 0;
+
+      await handler.handleMessage("h2", "bob", "reconnect", {});
+
+      expect(
+        gateway.sent.some(
+          (m) => m.userId === "h2" && m.type === "poker:update",
+        ),
+      ).toBe(true);
+      expect(
+        gateway.sent.some(
+          (m) =>
+            m.userId === "h2" &&
+            m.type === "reconnect:success" &&
+            (m.payload as { roomId: string }).roomId === "main",
+        ),
+      ).toBe(true);
+      expect(
+        gateway.sent.some(
+          (m) => m.userId === "h2" && m.type === "voice:token",
+        ),
+      ).toBe(false);
     });
   });
 

@@ -171,12 +171,13 @@ export class LobbyHandler {
         if (p.availableActions.length > 0) {
           this.scheduleAiTurn(room, p.targetUserId);
         }
-        return;
+      } else {
+        this.gateway.sendToUser(p.targetUserId, "poker:update", {
+          state: p.state,
+          availableActions: p.availableActions,
+        });
       }
-      this.gateway.sendToUser(p.targetUserId, "poker:update", {
-        state: p.state,
-        availableActions: p.availableActions,
-      });
+      this.pushSpectatorView(room);
     } else if (type === "poker:hand_result") {
       room.broadcast(this.gateway, "poker:hand_result", payload);
       const engine = this.engines.get(room.id);
@@ -325,20 +326,6 @@ export class LobbyHandler {
       }
     }
     room.pendingLeaveUserIds = [];
-
-    this.seatPendingJoin(room);
-  }
-
-  // Seats a queued human (full-room queue) once the yielded AI seat is free.
-  private seatPendingJoin(room: Room) {
-    const pj = room.pendingJoin;
-    if (!pj) return;
-    room.pendingJoin = null;
-    if (roomManager.findRoomByPlayer(pj.userId) || room.isFull) return;
-    room.addPlayer(pj.userId, pj.username);
-    if (room.seats[pj.seatIndex].userId === null) {
-      room.moveSeat(pj.userId, pj.seatIndex);
-    }
   }
 
   private async handleHandEnd(room: Room, gen: number) {
@@ -391,7 +378,6 @@ export class LobbyHandler {
       if (chips > 0) await addPoints(uid, chips);
     }
     room.pendingLeaveUserIds = [];
-    room.pendingJoin = null;
   }
 
   // ------------------------------------------------------------------
@@ -403,7 +389,7 @@ export class LobbyHandler {
     username: string,
     payload: unknown,
   ) {
-    const p = payload as { roomId?: string };
+    const p = payload as { roomId?: string; seatIndex?: number };
 
     const existing = roomManager.findRoomByPlayer(userId);
     if (existing) {
@@ -414,7 +400,17 @@ export class LobbyHandler {
       return;
     }
 
-    const room = roomManager.getRoom(p?.roomId || "main");
+    const targetRoomId = p?.roomId || "main";
+    const spectatingRoom = roomManager.findRoomBySpectator(userId);
+    if (spectatingRoom) {
+      if (spectatingRoom.id === targetRoomId) {
+        this.handleSpectatorJoin(userId, username, spectatingRoom, p?.seatIndex);
+        return;
+      }
+      spectatingRoom.removeSpectator(userId);
+    }
+
+    const room = roomManager.getRoom(targetRoomId);
     if (!room) {
       this.gateway.sendToUser(userId, "room:error", {
         code: "ROOM_NOT_FOUND",
@@ -423,16 +419,10 @@ export class LobbyHandler {
       return;
     }
 
-    if (room.isFull) {
-      await this.handleFullRoomJoin(userId, username, room);
-      return;
-    }
-
-    if (room.status === "playing") {
-      this.gateway.sendToUser(userId, "room:error", {
-        code: "GAME_IN_PROGRESS",
-        message: "游戏进行中，请稍后再进入",
-      });
+    // Mid-hand or full rooms are entered as a spectator; once the room is
+    // back to waiting with a free seat, the spectator seats themselves.
+    if (room.status === "playing" || room.isFull) {
+      this.enterAsSpectator(userId, username, room);
       return;
     }
 
@@ -442,52 +432,62 @@ export class LobbyHandler {
     this.sendVoiceToken(userId, username, room.id);
   }
 
-  // Full room: a human can take an AI seat. During a hand they queue until
-  // the hand settles; while waiting the swap happens immediately.
-  private async handleFullRoomJoin(
+  // A spectator re-joining: sit down when possible, otherwise resend the
+  // current snapshot so their view never goes stale.
+  private handleSpectatorJoin(
     userId: string,
     username: string,
     room: Room,
+    seatIndex?: number,
   ) {
-    const yieldSeat = room.aiSeats()[0];
-    if (!yieldSeat) {
-      this.gateway.sendToUser(userId, "room:error", {
-        code: "ROOM_FULL",
-        message: "房间已满",
+    if (room.status !== "waiting" || room.isFull) {
+      this.gateway.sendToUser(userId, "room:state", {
+        room: room.toDetail(),
       });
+      this.sendSpectatorSnapshot(userId, room);
       return;
     }
 
-    if (room.status === "waiting") {
-      const aiUserId = yieldSeat.userId!;
-      const chips = room.removePlayer(aiUserId);
-      if (chips > 0) await addPoints(aiUserId, chips);
-      room.addPlayer(userId, username);
-      this.broadcastLobbyList();
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
-      this.sendVoiceToken(userId, username, room.id);
-      return;
+    room.removeSpectator(userId);
+    room.addPlayer(userId, username);
+    if (
+      typeof seatIndex === "number" &&
+      room.seats[seatIndex]?.userId === null
+    ) {
+      room.moveSeat(userId, seatIndex);
     }
-
-    if (room.pendingJoin) {
-      this.gateway.sendToUser(userId, "room:error", {
-        code: "ROOM_FULL",
-        message: "房间已满，已有人在排队",
-      });
-      return;
-    }
-
-    room.pendingJoin = {
-      userId,
-      username,
-      seatIndex: yieldSeat.index,
-      aiUserId: yieldSeat.userId!,
-    };
-    room.pendingLeaveUserIds.push(yieldSeat.userId!);
+    this.broadcastLobbyList();
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
-    this.gateway.sendToUser(userId, "room:join-queued", {
-      seatIndex: yieldSeat.index,
+    this.sendVoiceToken(userId, username, room.id);
+  }
+
+  private enterAsSpectator(userId: string, username: string, room: Room) {
+    room.addSpectator(userId, username);
+    this.broadcastLobbyList();
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendSpectatorSnapshot(userId, room);
+  }
+
+  // Spectators get the observer view only — no hole cards, no actions.
+  private sendSpectatorSnapshot(userId: string, room: Room) {
+    const engine = this.engines.get(room.id);
+    if (!engine) return;
+    this.gateway.sendToUser(userId, "poker:update", {
+      state: engine.getStateForSpectator(),
+      availableActions: [],
     });
+  }
+
+  // Every engine update also reaches spectators with a single shared payload.
+  private pushSpectatorView(room: Room) {
+    if (room.spectators.length === 0) return;
+    const engine = this.engines.get(room.id);
+    if (!engine) return;
+    this.gateway.broadcast(
+      room.spectators.map((sp) => sp.userId),
+      "poker:update",
+      { state: engine.getStateForSpectator(), availableActions: [] },
+    );
   }
 
   private async handleConfirmBuyIn(userId: string, payload: unknown) {
@@ -718,9 +718,14 @@ export class LobbyHandler {
   }
 
   private async handleLeaveRoom(userId: string) {
-    const pendingRoom = roomManager.findRoomByPendingUser(userId);
-    if (pendingRoom) {
-      this.cancelPendingJoin(pendingRoom, userId);
+    const spectatingRoom = roomManager.findRoomBySpectator(userId);
+    if (spectatingRoom) {
+      spectatingRoom.removeSpectator(userId);
+      this.broadcastLobbyList();
+      spectatingRoom.broadcast(this.gateway, "room:state", {
+        room: spectatingRoom.toDetail(),
+      });
+      return;
     }
 
     const room = roomManager.findRoomByPlayer(userId);
@@ -728,17 +733,6 @@ export class LobbyHandler {
 
     this.gateway.sendToUser(userId, "voice:disconnect", {});
     await this.ejectPlayer(room, userId);
-  }
-
-  private cancelPendingJoin(room: Room, userId: string) {
-    const pj = room.pendingJoin;
-    if (!pj || pj.userId !== userId) return;
-    room.pendingJoin = null;
-    // The AI marked to yield for this queue entry stays at the table.
-    room.pendingLeaveUserIds = room.pendingLeaveUserIds.filter(
-      (id) => id !== pj.aiUserId,
-    );
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
   }
 
   // Removes a player, settling chips and keeping the system room alive.
@@ -798,6 +792,16 @@ export class LobbyHandler {
   }
 
   handleDisconnect(userId: string) {
+    const spectatingRoom = roomManager.findRoomBySpectator(userId);
+    if (spectatingRoom) {
+      spectatingRoom.removeSpectator(userId);
+      this.broadcastLobbyList();
+      spectatingRoom.broadcast(this.gateway, "room:state", {
+        room: spectatingRoom.toDetail(),
+      });
+      return;
+    }
+
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
 
@@ -922,28 +926,40 @@ export class LobbyHandler {
 
   private handleReconnect(userId: string, username: string) {
     const room = roomManager.findRoomByPlayer(userId);
-    if (!room) {
-      this.gateway.sendToUser(userId, "reconnect:failed", {
-        reason: "NO_ACTIVE_ROOM",
+    if (room) {
+      room.markReconnected(userId);
+      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+
+      const engine = this.engines.get(room.id);
+      if (engine) {
+        const state = engine.getStateForPlayer(userId);
+        const actions = engine.getAvailableActionsForPlayer(userId);
+        this.gateway.sendToUser(userId, "poker:update", {
+          state,
+          availableActions: actions,
+        });
+      }
+
+      this.sendVoiceToken(userId, username, room.id);
+      this.gateway.sendToUser(userId, "reconnect:success", { roomId: room.id });
+      return;
+    }
+
+    const spectatingRoom = roomManager.findRoomBySpectator(userId);
+    if (spectatingRoom) {
+      spectatingRoom.broadcast(this.gateway, "room:state", {
+        room: spectatingRoom.toDetail(),
+      });
+      this.sendSpectatorSnapshot(userId, spectatingRoom);
+      this.gateway.sendToUser(userId, "reconnect:success", {
+        roomId: spectatingRoom.id,
       });
       return;
     }
 
-    room.markReconnected(userId);
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
-
-    const engine = this.engines.get(room.id);
-    if (engine) {
-      const state = engine.getStateForPlayer(userId);
-      const actions = engine.getAvailableActionsForPlayer(userId);
-      this.gateway.sendToUser(userId, "poker:update", {
-        state,
-        availableActions: actions,
-      });
-    }
-
-    this.sendVoiceToken(userId, username, room.id);
-    this.gateway.sendToUser(userId, "reconnect:success", { roomId: room.id });
+    this.gateway.sendToUser(userId, "reconnect:failed", {
+      reason: "NO_ACTIVE_ROOM",
+    });
   }
 
   private async sendVoiceToken(
