@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { PokerEngine } from "../poker/engine.js";
 
-function makeEngine(playerCount: number, dealerIndex = 0, chips: number | number[] = 1000) {
+function makeEngine(
+  playerCount: number,
+  dealerIndex = 0,
+  chips: number | number[] = 1000,
+) {
   const players = Array.from({ length: playerCount }, (_, i) => ({
     userId: `u${i}`,
     username: `P${i}`,
@@ -9,9 +13,15 @@ function makeEngine(playerCount: number, dealerIndex = 0, chips: number | number
     chips: typeof chips === "number" ? chips : chips[i],
   }));
   const broadcasts: { type: string; payload: unknown }[] = [];
-  const engine = new PokerEngine(players, 1, 2, dealerIndex, (type, payload) => {
-    broadcasts.push({ type, payload });
-  });
+  const engine = new PokerEngine(
+    players,
+    1,
+    2,
+    dealerIndex,
+    (type, payload) => {
+      broadcasts.push({ type, payload });
+    },
+  );
   return { engine, broadcasts };
 }
 
@@ -63,7 +73,12 @@ describe("PokerEngine all-in flow", () => {
     // u0 (SB) all-in for 99 more
     expect(engine.handleAction("u0", "allin", 99)).toBe(true);
     // u1 has plenty of chips, so call/raise are available; calling covers the bet
-    expect(actionTypes(engine, "u1")).toEqual(["fold", "call", "raise", "allin"]);
+    expect(actionTypes(engine, "u1")).toEqual([
+      "fold",
+      "call",
+      "raise",
+      "allin",
+    ]);
     expect(engine.handleAction("u1", "call")).toBe(true);
     const s = engine.getState();
     expect(s.phase).toBe("settled");
@@ -121,13 +136,12 @@ describe("PokerEngine all-in flow", () => {
 
     let guard = 0;
     while (engine.getState().phase !== "settled" && guard++ < 2000) {
-      const s = engine.getState();
       const uid = currentUserId(engine);
       const actions = engine.getAvailableActionsForPlayer(uid);
       expect(actions.length).toBeGreaterThan(0); // never stall
       const pick = actions[Math.floor(rng() * actions.length)];
       const amount =
-        pick.type === "raise" ? pick.min ?? pick.amount : pick.amount;
+        pick.type === "raise" ? (pick.min ?? pick.amount) : pick.amount;
       expect(engine.handleAction(uid, pick.type, amount)).toBe(true);
     }
     expect(engine.getState().phase).toBe("settled");
@@ -135,22 +149,23 @@ describe("PokerEngine all-in flow", () => {
 
     let hands = 0;
     while (engine.nextHand() && hands++ < 50) {
-      const s = engine.getState();
-      expect(s.phase).toBe("preflop");
+      expect(engine.getState().phase).toBe("preflop");
       let h = 0;
-      while (s.phase !== "settled" && h++ < 2000) {
+      while (engine.getState().phase !== "settled" && h++ < 2000) {
         const uid = currentUserId(engine);
         const actions = engine.getAvailableActionsForPlayer(uid);
         expect(actions.length).toBeGreaterThan(0);
         const pick = actions[Math.floor(rng() * actions.length)];
         const amount =
-          pick.type === "raise" ? pick.min ?? pick.amount : pick.amount;
+          pick.type === "raise" ? (pick.min ?? pick.amount) : pick.amount;
         expect(engine.handleAction(uid, pick.type, amount)).toBe(true);
       }
     }
 
     // Chips are only redistributed, never created or destroyed.
-    const total = engine.getState().players.reduce((sum, p) => sum + p.chips, 0);
+    const total = engine
+      .getState()
+      .players.reduce((sum, p) => sum + p.chips, 0);
     expect(total).toBe(5000);
   });
 });
