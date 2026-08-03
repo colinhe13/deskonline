@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { createServerMessage, parseClientMessage } from "../ws/protocol.js";
+import {
+  createServerMessage,
+  parseClientMessage,
+  shouldRouteToLobby,
+} from "../ws/protocol.js";
 
 describe("protocol", () => {
   describe("createServerMessage", () => {
@@ -30,6 +34,33 @@ describe("protocol", () => {
 
     it("returns null when type is not a string", () => {
       expect(parseClientMessage(JSON.stringify({ type: 123 }))).toBeNull();
+    });
+  });
+
+  describe("shouldRouteToLobby (gateway 路由总闸)", () => {
+    it("routes room:* and poker:* messages", () => {
+      expect(shouldRouteToLobby("room:join")).toBe(true);
+      expect(shouldRouteToLobby("room:list:request")).toBe(true);
+      expect(shouldRouteToLobby("poker:action")).toBe(true);
+      expect(shouldRouteToLobby("poker:reveal")).toBe(true);
+    });
+
+    it("routes ai:* messages", () => {
+      expect(shouldRouteToLobby("ai:add")).toBe(true);
+      expect(shouldRouteToLobby("ai:remove")).toBe(true);
+    });
+
+    // Regression: reconnect was silently dropped by the prefix filter,
+    // disabling snapshot restore and voice-token resend.
+    it("routes reconnect explicitly", () => {
+      expect(shouldRouteToLobby("reconnect")).toBe(true);
+    });
+
+    it("does not route unrelated types", () => {
+      expect(shouldRouteToLobby("voice:token")).toBe(false);
+      expect(shouldRouteToLobby("chat:message")).toBe(false);
+      expect(shouldRouteToLobby("ai")).toBe(false);
+      expect(shouldRouteToLobby("")).toBe(false);
     });
   });
 });

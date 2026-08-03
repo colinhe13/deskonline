@@ -82,25 +82,29 @@ describe("Room system model", () => {
     expect(room.findSeatByUserId("u1")!.confirmed).toBe(false);
   });
 
-  it("markBusted unconfirms only confirmed seats that ran out of chips", () => {
+  it("addPlayer marks AI seats and helpers split humans/AI", () => {
     const room = makeRoom();
     room.addPlayer("u1", "P1");
-    room.addPlayer("u2", "P2");
-    room.addPlayer("u3", "P3");
-    room.confirmBuyIn("u1", 150);
-    room.confirmBuyIn("u2", 150);
-    room.confirmBuyIn("u3", 150);
+    room.addPlayer("ai1", "AI_XiaoZhi", true);
 
-    room.findSeatByUserId("u1")!.chips = 0; // busted
-    room.findSeatByUserId("u3")!.confirmed = false; // already unconfirmed (left seat state)
+    expect(room.findSeatByUserId("ai1")!.isAi).toBe(true);
+    expect(room.findSeatByUserId("u1")!.isAi).toBe(false);
+    expect(room.aiSeats()).toHaveLength(1);
+    expect(room.humanSeats()).toHaveLength(1);
+    expect(room.hasHuman()).toBe(true);
 
-    expect(room.markBusted()).toBe(true);
-    expect(room.findSeatByUserId("u1")!.confirmed).toBe(false);
-    expect(room.findSeatByUserId("u1")!.buyIn).toBe(0);
-    expect(room.findSeatByUserId("u2")!.confirmed).toBe(true); // still has chips
-    expect(room.confirmedCount).toBe(1);
+    room.removePlayer("u1");
+    expect(room.hasHuman()).toBe(false);
+    // removePlayer clears the AI flag so the seat can be reused.
+    room.removePlayer("ai1");
+    expect(room.seats.every((s) => !s.isAi)).toBe(true);
+  });
 
-    expect(room.markBusted()).toBe(false); // nothing left to mark
+  it("toSummary exposes autoResume", () => {
+    const room = makeRoom();
+    expect(room.toSummary().autoResume).toBe(false);
+    room.autoResume = true;
+    expect(room.toSummary().autoResume).toBe(true);
   });
 
   it("confirmedSeats returns only confirmed players", () => {

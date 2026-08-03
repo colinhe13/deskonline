@@ -125,8 +125,8 @@ describe("PokerEngine all-in flow", () => {
     expect(s.phase).toBe("settled");
     const total = s.players.reduce((sum, p) => sum + p.chips, 0);
     expect(total).toBe(1001);
-    // The 1-chip blind's main pot is contested; u1 either wins it or loses it
-    expect([1001, 999]).toContain(s.players[1].chips);
+    // The 1-chip blind's main pot is contested; u1 wins, loses, or splits it
+    expect([1001, 1000, 999]).toContain(s.players[1].chips);
   });
 
   it("fuzz: random play conserves chips, never stalls, and settles", () => {
