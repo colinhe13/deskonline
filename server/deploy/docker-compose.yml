@@ -2,8 +2,8 @@ services:
   game-server:
     build: ./server
     restart: unless-stopped
-    ports:
-      - "3001:3001"
+    expose:
+      - "3001"
     env_file:
       - .env
     extra_hosts:
@@ -17,7 +17,7 @@ services:
     image: nginx:alpine
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "52371:80"
     volumes:
       - ./web/dist:/usr/share/nginx/html:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
