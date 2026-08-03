@@ -29,6 +29,8 @@ export class Room {
   seats: Seat[];
   status: RoomStatus = "waiting";
   entryOrder: string[] = [];
+  // Set when the table pauses because a player busted; cleared when the game auto-resumes.
+  autoResume = false;
 
   constructor(id: string, settings: RoomSettings) {
     this.id = id;
@@ -142,6 +144,21 @@ export class Room {
       }
     }
     return refunds;
+  }
+
+  // Confirmed seats that ran out of chips become unconfirmed so the player can
+  // rebuy (frontend shows the buy-in prompt via confirmed === false).
+  // Returns true if any seat was marked.
+  markBusted(): boolean {
+    let marked = false;
+    for (const seat of this.seats) {
+      if (seat.userId && seat.confirmed && seat.chips === 0) {
+        seat.confirmed = false;
+        seat.buyIn = 0;
+        marked = true;
+      }
+    }
+    return marked;
   }
 
   transferHost(targetUserId: string): boolean {

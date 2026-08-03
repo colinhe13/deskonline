@@ -97,7 +97,14 @@ export class LobbyHandler {
       setTimeout(() => {
         const eng = this.engines.get(room.id);
         if (eng && room.status === "playing") {
-          if (!eng.nextHand()) {
+          const busted = room.markBusted();
+          if (busted) {
+            // Busted players must rebuy before the table continues.
+            room.autoResume = true;
+            this.engines.delete(room.id);
+            eng.destroy();
+            room.status = "waiting";
+          } else if (!eng.nextHand()) {
             room.status = "waiting";
             this.engines.delete(room.id);
             eng.destroy();
@@ -177,6 +184,19 @@ export class LobbyHandler {
 
     room.confirmBuyIn(userId, buyIn);
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.tryResumeGame(room);
+  }
+
+  // After a busted-pause, auto-resume once enough confirmed players have chips.
+  private tryResumeGame(room: Room) {
+    if (!room.autoResume || room.status !== "waiting") return;
+    const confirmed = room.confirmedSeats();
+    if (confirmed.length < 2) return;
+    if (confirmed.some((s) => s.chips <= 0)) return;
+    room.autoResume = false;
+    room.status = "playing";
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.startEngine(room);
   }
 
   private async handleUpdateSettings(userId: string, payload: unknown) {
@@ -299,9 +319,13 @@ export class LobbyHandler {
   // Removes a player, settling chips and keeping the system room alive.
   private async ejectPlayer(room: Room, userId: string) {
     const engine = this.engines.get(room.id);
-    const wasInHand = !!engine && engine.getState().players.some((p) => p.userId === userId);
+    const state = engine?.getState();
+    const wasInHand = !!state && state.players.some((p) => p.userId === userId);
+    // Once a hand is settled, seat chips are final (already synced from the
+    // engine); voiding would add stale totalBet on top and mint points.
+    const handSettled = !!state && state.phase === "settled";
 
-    if (engine && wasInHand) {
+    if (engine && wasInHand && !handSettled) {
       this.voidHandToSeats(room, engine);
     }
 

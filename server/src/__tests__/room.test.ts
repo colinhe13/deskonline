@@ -82,6 +82,27 @@ describe("Room system model", () => {
     expect(room.findSeatByUserId("u1")!.confirmed).toBe(false);
   });
 
+  it("markBusted unconfirms only confirmed seats that ran out of chips", () => {
+    const room = makeRoom();
+    room.addPlayer("u1", "P1");
+    room.addPlayer("u2", "P2");
+    room.addPlayer("u3", "P3");
+    room.confirmBuyIn("u1", 150);
+    room.confirmBuyIn("u2", 150);
+    room.confirmBuyIn("u3", 150);
+
+    room.findSeatByUserId("u1")!.chips = 0; // busted
+    room.findSeatByUserId("u3")!.confirmed = false; // already unconfirmed (left seat state)
+
+    expect(room.markBusted()).toBe(true);
+    expect(room.findSeatByUserId("u1")!.confirmed).toBe(false);
+    expect(room.findSeatByUserId("u1")!.buyIn).toBe(0);
+    expect(room.findSeatByUserId("u2")!.confirmed).toBe(true); // still has chips
+    expect(room.confirmedCount).toBe(1);
+
+    expect(room.markBusted()).toBe(false); // nothing left to mark
+  });
+
   it("confirmedSeats returns only confirmed players", () => {
     const room = makeRoom();
     room.addPlayer("u1", "P1");
