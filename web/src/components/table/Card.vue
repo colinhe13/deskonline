@@ -1,12 +1,20 @@
 <template>
-  <div class="card" :class="[{ 'card-back': !visible }, animClass]" :style="cardStyle">
-    <template v-if="visible && card">
-      <span class="card-rank">{{ card.rank }}</span>
-      <span class="card-suit">{{ suitSymbol }}</span>
-    </template>
-    <template v-else>
-      <span class="card-pattern">🂠</span>
-    </template>
+  <div
+    class="card"
+    :class="[{ 'card-face-down': !visible }, animClass]"
+    :style="cardStyle"
+  >
+    <div class="card-inner">
+      <div class="card-front">
+        <template v-if="visible && card">
+          <span class="card-rank">{{ card.rank }}</span>
+          <span class="card-suit">{{ suitSymbol }}</span>
+        </template>
+      </div>
+      <div class="card-back-face">
+        <span class="card-pattern">🂠</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -29,7 +37,7 @@ const animClass = computed(() => (props.effect === "flip" ? "card-flip" : "card-
 const cardStyle = computed(() => {
   const style: Record<string, string> = {};
   if (props.visible && props.card) {
-    style.backgroundColor = SUIT_COLORS[props.card.suit];
+    style["--card-color"] = SUIT_COLORS[props.card.suit];
   }
   if (props.delay > 0) {
     style.animationDelay = `${props.delay}s`;
@@ -42,39 +50,80 @@ const cardStyle = computed(() => {
 .card {
   width: 40px;
   height: 56px;
-  background: #fff;
-  border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  perspective: 200px;
+  flex-shrink: 0;
+}
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transition: transform 0.45s var(--ease-out);
+}
+.card-face-down .card-inner {
+  transform: rotateY(180deg);
+}
+.card-front,
+.card-back-face {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   font-weight: bold;
   color: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
 }
-.card-back {
-  background: #2b5797;
-  border-color: #1a3a6b;
+.card-front {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 42%), var(--card-color, #2563eb);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.card-front::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+}
+.card-back-face {
+  transform: rotateY(180deg);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.05) 0 3px,
+      transparent 3px 6px
+    ),
+    linear-gradient(160deg, var(--card-back-0), var(--card-back-1));
+  border: 1px solid var(--card-back-1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 .card-pattern {
   font-size: 1.5rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.65);
 }
 .card-rank {
   font-size: 0.9rem;
   line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 .card-suit {
   font-size: 1.1rem;
   line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
-.card-deal {
-  animation: card-deal-in 0.35s ease both;
+.card-deal .card-inner {
+  animation: card-deal-in 0.35s var(--ease-out) both;
 }
-.card-flip {
-  animation: card-flip-in 0.45s ease both;
+.card-flip .card-inner {
+  animation: card-flip-in 0.45s var(--ease-out) both;
 }
 @keyframes card-deal-in {
   from {
@@ -83,13 +132,13 @@ const cardStyle = computed(() => {
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1) rotateY(0deg);
   }
 }
 @keyframes card-flip-in {
   from {
     opacity: 0;
-    transform: rotateY(90deg) scale(0.9);
+    transform: rotateY(180deg) scale(0.9);
   }
   to {
     opacity: 1;

@@ -119,10 +119,22 @@ function seatStyle(index: number) {
   width: 90%;
   max-width: 800px;
   aspect-ratio: 1.6;
-  background: #2d6b3f;
   border-radius: 50%;
-  border: 8px solid #5c3d1e;
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3);
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='linear' slope='0.05'/></feComponentTransfer></filter><rect width='140' height='140' filter='url(%23n)'/></svg>"),
+    radial-gradient(
+      ellipse 62% 58% at 50% 42%,
+      var(--felt-0) 0%,
+      var(--felt-1) 68%,
+      #0d3a24 100%
+    );
+  box-shadow:
+    inset 0 0 0 3px rgba(240, 199, 94, 0.2),
+    inset 0 0 60px rgba(0, 0, 0, 0.45),
+    inset 0 -18px 40px rgba(0, 0, 0, 0.28),
+    0 0 0 11px var(--rail-1),
+    0 0 0 14px var(--rail-0),
+    0 24px 60px rgba(0, 0, 0, 0.55);
 }
 .seat-position {
   position: absolute;
@@ -132,7 +144,7 @@ function seatStyle(index: number) {
   cursor: pointer;
 }
 .seat-position.selectable:hover {
-  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.9));
+  filter: drop-shadow(0 0 8px rgba(240, 199, 94, 0.9));
 }
 .table-center {
   position: absolute;
@@ -145,14 +157,21 @@ function seatStyle(index: number) {
   gap: 8px;
 }
 .table-id {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.8rem;
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.1em;
 }
 
 @media (max-width: 768px) {
   .table-felt {
     width: 94%;
     aspect-ratio: 1 / 1.05;
+    box-shadow:
+      inset 0 0 0 2px rgba(240, 199, 94, 0.2),
+      inset 0 0 40px rgba(0, 0, 0, 0.45),
+      0 0 0 8px var(--rail-1),
+      0 0 0 11px var(--rail-0),
+      0 18px 40px rgba(0, 0, 0, 0.55);
   }
   .table-center {
     gap: 4px;

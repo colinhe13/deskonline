@@ -25,14 +25,21 @@ const emptySlots = computed(() => Math.max(0, 5 - props.cards.length));
   display: flex;
   gap: 6px;
   justify-content: center;
+  min-height: 56px;
+  align-items: center;
 }
 .card-slot {
   width: 40px;
   height: 56px;
-  border: 1px dashed rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
+  border: 1px dashed rgba(244, 241, 232, 0.28);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.14);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 @media (max-width: 768px) {
+  .community-cards {
+    min-height: 44px;
+  }
   .card-slot {
     width: 32px;
     height: 44px;
