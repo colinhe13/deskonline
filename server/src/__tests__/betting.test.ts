@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import { calculateSidePots, isBettingRoundComplete } from "../poker/betting.js";
 import { PlayerState } from "../poker/types.js";
 
-function makePlayer(userId: string, totalBet: number, folded: boolean, allIn: boolean): PlayerState {
+function makePlayer(
+  userId: string,
+  totalBet: number,
+  folded: boolean,
+  allIn: boolean,
+): PlayerState {
   return {
     userId,
     username: userId,
@@ -76,7 +81,12 @@ describe("calculateSidePots", () => {
 });
 
 describe("isBettingRoundComplete", () => {
-  const active = (bet: number, hasActed = false, allIn = false, folded = false): PlayerState => ({
+  const active = (
+    bet: number,
+    hasActed = false,
+    allIn = false,
+    folded = false,
+  ): PlayerState => ({
     ...makePlayer(`p${Math.random()}`, bet, folded, allIn),
     bet,
     hasActed,

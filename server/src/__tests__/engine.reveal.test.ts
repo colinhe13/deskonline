@@ -1,21 +1,35 @@
 import { describe, it, expect } from "vitest";
 import { PokerEngine } from "../poker/engine.js";
 
-function makeEngine(playerCount: number, dealerIndex = 0, chips: number | number[] = 1000) {
+function makeEngine(
+  playerCount: number,
+  dealerIndex = 0,
+  chips: number | number[] = 1000,
+) {
   const players = Array.from({ length: playerCount }, (_, i) => ({
     userId: `u${i}`,
     username: `P${i}`,
     seatIndex: i,
-    chips: typeof chips === "number" ? chips : chips[i] ?? 1000,
+    chips: typeof chips === "number" ? chips : (chips[i] ?? 1000),
   }));
   const broadcasts: { type: string; payload: unknown }[] = [];
-  const engine = new PokerEngine(players, 1, 2, dealerIndex, (type, payload) => {
-    broadcasts.push({ type, payload });
-  });
+  const engine = new PokerEngine(
+    players,
+    1,
+    2,
+    dealerIndex,
+    (type, payload) => {
+      broadcasts.push({ type, payload });
+    },
+  );
   return { engine, broadcasts };
 }
 
-function cardCountFor(engine: PokerEngine, viewerId: string, targetId: string): number {
+function cardCountFor(
+  engine: PokerEngine,
+  viewerId: string,
+  targetId: string,
+): number {
   const view = engine.getStateForPlayer(viewerId);
   return view.players.find((p) => p.userId === targetId)!.cards.length;
 }
@@ -105,8 +119,13 @@ describe("hand card privacy", () => {
     expect(engine.handleAction("u2", "fold")).toBe(true);
     expect(engine.getState().phase).toBe("settled");
 
-    const handResults = broadcasts.filter((b) => b.type === "poker:hand_result");
-    const payload = handResults[0]?.payload as { reason: string; winners: { userId: string }[] };
+    const handResults = broadcasts.filter(
+      (b) => b.type === "poker:hand_result",
+    );
+    const payload = handResults[0]?.payload as {
+      reason: string;
+      winners: { userId: string }[];
+    };
     // u0 vs u1 showdown -> reason showdown, winner revealed automatically
     expect(payload.reason).toBe("showdown");
     for (const p of engine.getState().players) {

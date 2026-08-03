@@ -74,7 +74,9 @@ describe("auth.service", () => {
         updatedAt: new Date(),
       });
 
-      await expect(register("alice", "password123")).rejects.toThrow("USERNAME_TAKEN");
+      await expect(register("alice", "password123")).rejects.toThrow(
+        "USERNAME_TAKEN",
+      );
     });
   });
 
@@ -106,13 +108,17 @@ describe("auth.service", () => {
       });
       vi.mocked(bcrypt.compare).mockResolvedValue(false);
 
-      await expect(login("alice", "wrongpass")).rejects.toThrow("INVALID_CREDENTIALS");
+      await expect(login("alice", "wrongpass")).rejects.toThrow(
+        "INVALID_CREDENTIALS",
+      );
     });
 
     it("throws INVALID_CREDENTIALS for non-existent user", async () => {
       vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
 
-      await expect(login("nobody", "pass")).rejects.toThrow("INVALID_CREDENTIALS");
+      await expect(login("nobody", "pass")).rejects.toThrow(
+        "INVALID_CREDENTIALS",
+      );
     });
   });
 });

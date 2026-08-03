@@ -12,7 +12,11 @@ export class LiveKitService {
     this.publicUrl = config.livekitPublicUrl;
   }
 
-  async generateToken(roomName: string, identity: string, username: string): Promise<string> {
+  async generateToken(
+    roomName: string,
+    identity: string,
+    username: string,
+  ): Promise<string> {
     const at = new AccessToken(this.apiKey, this.apiSecret, {
       identity,
       name: username,

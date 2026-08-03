@@ -10,7 +10,12 @@ export class LobbyHandler {
 
   constructor(private gateway: WebSocketGateway) {}
 
-  async handleMessage(userId: string, username: string, type: string, payload: unknown) {
+  async handleMessage(
+    userId: string,
+    username: string,
+    type: string,
+    payload: unknown,
+  ) {
     switch (type) {
       case "room:join":
         await this.handleJoinRoom(userId, username, payload);
@@ -90,7 +95,11 @@ export class LobbyHandler {
 
   private broadcastEngineMessage(room: Room, type: string, payload: unknown) {
     if (type === "poker:update") {
-      const p = payload as { targetUserId: string; state: unknown; availableActions: unknown };
+      const p = payload as {
+        targetUserId: string;
+        state: unknown;
+        availableActions: unknown;
+      };
       this.gateway.sendToUser(p.targetUserId, "poker:update", {
         state: p.state,
         availableActions: p.availableActions,
@@ -127,28 +136,44 @@ export class LobbyHandler {
     }
   }
 
-  private async handleJoinRoom(userId: string, username: string, payload: unknown) {
+  private async handleJoinRoom(
+    userId: string,
+    username: string,
+    payload: unknown,
+  ) {
     const p = payload as { roomId?: string };
 
     const existing = roomManager.findRoomByPlayer(userId);
     if (existing) {
-      this.gateway.sendToUser(userId, "room:error", { code: "ALREADY_IN_ROOM", message: "你已在房间中" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "ALREADY_IN_ROOM",
+        message: "你已在房间中",
+      });
       return;
     }
 
     const room = roomManager.getRoom(p?.roomId || "main");
     if (!room) {
-      this.gateway.sendToUser(userId, "room:error", { code: "ROOM_NOT_FOUND", message: "房间不存在" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "ROOM_NOT_FOUND",
+        message: "房间不存在",
+      });
       return;
     }
 
     if (room.isFull) {
-      this.gateway.sendToUser(userId, "room:error", { code: "ROOM_FULL", message: "房间已满" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "ROOM_FULL",
+        message: "房间已满",
+      });
       return;
     }
 
     if (room.status === "playing") {
-      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，请稍后再进入" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "GAME_IN_PROGRESS",
+        message: "游戏进行中，请稍后再进入",
+      });
       return;
     }
 
@@ -166,7 +191,10 @@ export class LobbyHandler {
     if (!seat) return;
 
     if (room.status === "playing") {
-      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，无法修改带入" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "GAME_IN_PROGRESS",
+        message: "游戏进行中，无法修改带入",
+      });
       return;
     }
 
@@ -190,7 +218,10 @@ export class LobbyHandler {
         await deductPoints(userId, buyIn);
       }
     } catch {
-      this.gateway.sendToUser(userId, "room:error", { code: "INSUFFICIENT_POINTS", message: "积分不足" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "INSUFFICIENT_POINTS",
+        message: "积分不足",
+      });
       return;
     }
 
@@ -216,11 +247,17 @@ export class LobbyHandler {
     if (!room) return;
 
     if (room.hostId !== userId) {
-      this.gateway.sendToUser(userId, "room:error", { code: "NOT_HOST", message: "只有房主可以修改设置" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_HOST",
+        message: "只有房主可以修改设置",
+      });
       return;
     }
     if (room.status === "playing") {
-      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，无法修改设置" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "GAME_IN_PROGRESS",
+        message: "游戏进行中，无法修改设置",
+      });
       return;
     }
 
@@ -239,15 +276,24 @@ export class LobbyHandler {
     const maxBuyIn = p.maxBuyIn ?? room.settings.maxBuyIn;
 
     if (maxPlayers < 2 || maxPlayers > 9 || maxPlayers < room.playerCount) {
-      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_SETTINGS", message: "人数设置无效" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "INVALID_SETTINGS",
+        message: "人数设置无效",
+      });
       return;
     }
     if (smallBlind <= 0 || bigBlind <= smallBlind) {
-      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_SETTINGS", message: "盲注设置无效" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "INVALID_SETTINGS",
+        message: "盲注设置无效",
+      });
       return;
     }
     if (minBuyIn < bigBlind || maxBuyIn < minBuyIn) {
-      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_SETTINGS", message: "带入范围设置无效" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "INVALID_SETTINGS",
+        message: "带入范围设置无效",
+      });
       return;
     }
 
@@ -267,13 +313,19 @@ export class LobbyHandler {
     if (!room) return;
 
     if (room.hostId !== userId) {
-      this.gateway.sendToUser(userId, "room:error", { code: "NOT_HOST", message: "只有房主可以移交房主" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_HOST",
+        message: "只有房主可以移交房主",
+      });
       return;
     }
 
     const p = payload as { targetUserId?: string };
     if (!p?.targetUserId || !room.transferHost(p.targetUserId)) {
-      this.gateway.sendToUser(userId, "room:error", { code: "INVALID_TARGET", message: "目标玩家不在房间中" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "INVALID_TARGET",
+        message: "目标玩家不在房间中",
+      });
       return;
     }
 
@@ -285,7 +337,10 @@ export class LobbyHandler {
     if (!room) return;
 
     if (room.status === "playing") {
-      this.gateway.sendToUser(userId, "room:error", { code: "GAME_IN_PROGRESS", message: "游戏进行中，无法换座" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "GAME_IN_PROGRESS",
+        message: "游戏进行中，无法换座",
+      });
       return;
     }
 
@@ -293,7 +348,10 @@ export class LobbyHandler {
     if (typeof p?.seatIndex !== "number") return;
 
     if (!room.moveSeat(userId, p.seatIndex)) {
-      this.gateway.sendToUser(userId, "room:error", { code: "SEAT_TAKEN", message: "该座位已被占用" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "SEAT_TAKEN",
+        message: "该座位已被占用",
+      });
       return;
     }
 
@@ -305,13 +363,19 @@ export class LobbyHandler {
     if (!room) return;
 
     if (room.hostId !== userId) {
-      this.gateway.sendToUser(userId, "room:error", { code: "NOT_HOST", message: "只有房主可以开始游戏" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_HOST",
+        message: "只有房主可以开始游戏",
+      });
       return;
     }
     if (room.status === "playing") return;
 
     if (room.confirmedCount < 2) {
-      this.gateway.sendToUser(userId, "room:error", { code: "NOT_ENOUGH_PLAYERS", message: "至少需要2名已确认带入的玩家" });
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_ENOUGH_PLAYERS",
+        message: "至少需要2名已确认带入的玩家",
+      });
       return;
     }
 
@@ -392,13 +456,17 @@ export class LobbyHandler {
   }
 
   sendRoomListToUser(userId: string) {
-    this.gateway.sendToUser(userId, "room:list", { rooms: roomManager.listRooms() });
+    this.gateway.sendToUser(userId, "room:list", {
+      rooms: roomManager.listRooms(),
+    });
   }
 
   private handleReconnect(userId: string, username: string) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) {
-      this.gateway.sendToUser(userId, "reconnect:failed", { reason: "NO_ACTIVE_ROOM" });
+      this.gateway.sendToUser(userId, "reconnect:failed", {
+        reason: "NO_ACTIVE_ROOM",
+      });
       return;
     }
 
@@ -409,16 +477,27 @@ export class LobbyHandler {
     if (engine) {
       const state = engine.getStateForPlayer(userId);
       const actions = engine.getAvailableActionsForPlayer(userId);
-      this.gateway.sendToUser(userId, "poker:update", { state, availableActions: actions });
+      this.gateway.sendToUser(userId, "poker:update", {
+        state,
+        availableActions: actions,
+      });
     }
 
     this.sendVoiceToken(userId, username, room.id);
     this.gateway.sendToUser(userId, "reconnect:success", { roomId: room.id });
   }
 
-  private async sendVoiceToken(userId: string, username: string, roomId: string) {
+  private async sendVoiceToken(
+    userId: string,
+    username: string,
+    roomId: string,
+  ) {
     const roomName = livekitService.getRoomName(roomId);
-    const token = await livekitService.generateToken(roomName, userId, username);
+    const token = await livekitService.generateToken(
+      roomName,
+      userId,
+      username,
+    );
     const url = livekitService.getClientUrl();
     this.gateway.sendToUser(userId, "voice:token", { token, url });
   }

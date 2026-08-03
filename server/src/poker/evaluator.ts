@@ -39,32 +39,66 @@ function evaluate5(cards: Card[]): HandResult {
     return { rank: HandRank.RoyalFlush, bestCards: cards, kickers: [14] };
   }
   if (isFlush && isStraight) {
-    return { rank: HandRank.StraightFlush, bestCards: cards, kickers: [straightHigh] };
+    return {
+      rank: HandRank.StraightFlush,
+      bestCards: cards,
+      kickers: [straightHigh],
+    };
   }
   if (counts[0]?.count === 4) {
-    return { rank: HandRank.FourOfAKind, bestCards: cards, kickers: [counts[0].value, counts[1].value] };
+    return {
+      rank: HandRank.FourOfAKind,
+      bestCards: cards,
+      kickers: [counts[0].value, counts[1].value],
+    };
   }
   if (counts[0]?.count === 3 && counts[1]?.count === 2) {
-    return { rank: HandRank.FullHouse, bestCards: cards, kickers: [counts[0].value, counts[1].value] };
+    return {
+      rank: HandRank.FullHouse,
+      bestCards: cards,
+      kickers: [counts[0].value, counts[1].value],
+    };
   }
   if (isFlush) {
     return { rank: HandRank.Flush, bestCards: cards, kickers: values };
   }
   if (isStraight) {
-    return { rank: HandRank.Straight, bestCards: cards, kickers: [straightHigh] };
+    return {
+      rank: HandRank.Straight,
+      bestCards: cards,
+      kickers: [straightHigh],
+    };
   }
   if (counts[0]?.count === 3) {
-    const kickers = counts.filter((c) => c.count === 1).map((c) => c.value).sort((a, b) => b - a);
-    return { rank: HandRank.ThreeOfAKind, bestCards: cards, kickers: [counts[0].value, ...kickers] };
+    const kickers = counts
+      .filter((c) => c.count === 1)
+      .map((c) => c.value)
+      .sort((a, b) => b - a);
+    return {
+      rank: HandRank.ThreeOfAKind,
+      bestCards: cards,
+      kickers: [counts[0].value, ...kickers],
+    };
   }
   if (counts[0]?.count === 2 && counts[1]?.count === 2) {
     const pairs = [counts[0].value, counts[1].value].sort((a, b) => b - a);
     const kicker = counts[2].value;
-    return { rank: HandRank.TwoPair, bestCards: cards, kickers: [...pairs, kicker] };
+    return {
+      rank: HandRank.TwoPair,
+      bestCards: cards,
+      kickers: [...pairs, kicker],
+    };
   }
   if (counts[0]?.count === 2) {
-    const kickers = counts.filter((c) => c.count === 1).map((c) => c.value).sort((a, b) => b - a);
-    return { rank: HandRank.OnePair, bestCards: cards, kickers: [counts[0].value, ...kickers] };
+    const kickers = counts
+      .filter((c) => c.count === 1)
+      .map((c) => c.value)
+      .sort((a, b) => b - a);
+    return {
+      rank: HandRank.OnePair,
+      bestCards: cards,
+      kickers: [counts[0].value, ...kickers],
+    };
   }
   return { rank: HandRank.HighCard, bestCards: cards, kickers: values };
 }
@@ -77,7 +111,13 @@ function checkStraight(values: number[]): boolean {
     if (unique[i] - unique[i + 4] === 4) return true;
   }
   // Wheel: A-2-3-4-5
-  if (unique.includes(14) && unique.includes(2) && unique.includes(3) && unique.includes(4) && unique.includes(5)) {
+  if (
+    unique.includes(14) &&
+    unique.includes(2) &&
+    unique.includes(3) &&
+    unique.includes(4) &&
+    unique.includes(5)
+  ) {
     return true;
   }
   return false;

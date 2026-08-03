@@ -10,9 +10,15 @@ function makeEngine(playerCount: number, dealerIndex = 0) {
     chips: 1000,
   }));
   const broadcasts: { type: string; payload: unknown }[] = [];
-  const engine = new PokerEngine(players, 10, 20, dealerIndex, (type, payload) => {
-    broadcasts.push({ type, payload });
-  });
+  const engine = new PokerEngine(
+    players,
+    10,
+    20,
+    dealerIndex,
+    (type, payload) => {
+      broadcasts.push({ type, payload });
+    },
+  );
   return { engine, broadcasts };
 }
 
@@ -20,7 +26,12 @@ function currentUserId(state: GameState): string {
   return state.players[state.currentPlayerIndex].userId;
 }
 
-function act(engine: PokerEngine, userId: string, action: string, amount?: number) {
+function act(
+  engine: PokerEngine,
+  userId: string,
+  action: string,
+  amount?: number,
+) {
   const ok = engine.handleAction(userId, action, amount);
   expect(ok).toBe(true);
 }

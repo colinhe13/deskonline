@@ -20,7 +20,10 @@ export async function register(username: string, password: string) {
   });
 
   const token = generateToken({ userId: user.id, username: user.username });
-  return { token, user: { id: user.id, username: user.username, points: user.points } };
+  return {
+    token,
+    user: { id: user.id, username: user.username, points: user.points },
+  };
 }
 
 export async function login(username: string, password: string) {
@@ -35,7 +38,10 @@ export async function login(username: string, password: string) {
   }
 
   const token = generateToken({ userId: user.id, username: user.username });
-  return { token, user: { id: user.id, username: user.username, points: user.points } };
+  return {
+    token,
+    user: { id: user.id, username: user.username, points: user.points },
+  };
 }
 
 export async function getMe(userId: string) {

@@ -2,9 +2,9 @@ import { PlayerState, SidePot } from "./types.js";
 
 export function calculateSidePots(players: PlayerState[]): SidePot[] {
   const activePlayers = players.filter((p) => !p.folded);
-  const allInAmounts = [...new Set(activePlayers.filter((p) => p.allIn).map((p) => p.totalBet))].sort(
-    (a, b) => a - b,
-  );
+  const allInAmounts = [
+    ...new Set(activePlayers.filter((p) => p.allIn).map((p) => p.totalBet)),
+  ].sort((a, b) => a - b);
 
   if (allInAmounts.length === 0) {
     const total = players.reduce((sum, p) => sum + p.totalBet, 0);
@@ -19,7 +19,8 @@ export function calculateSidePots(players: PlayerState[]): SidePot[] {
     const eligible: string[] = [];
 
     for (const p of players) {
-      const playerContribution = Math.min(p.totalBet, level) - Math.min(p.totalBet, prevLevel);
+      const playerContribution =
+        Math.min(p.totalBet, level) - Math.min(p.totalBet, prevLevel);
       amount += playerContribution;
       if (!p.folded && p.totalBet >= level) {
         eligible.push(p.userId);
@@ -51,7 +52,10 @@ export function calculateSidePots(players: PlayerState[]): SidePot[] {
   return pots;
 }
 
-export function isBettingRoundComplete(players: PlayerState[], currentBet: number): boolean {
+export function isBettingRoundComplete(
+  players: PlayerState[],
+  currentBet: number,
+): boolean {
   const active = players.filter((p) => !p.folded && !p.allIn);
   if (active.length === 0) return true;
   return active.every((p) => p.hasActed && p.bet === currentBet);

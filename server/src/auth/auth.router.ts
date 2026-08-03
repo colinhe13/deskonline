@@ -10,7 +10,10 @@ const registerSchema = z.object({
     .string()
     .min(3)
     .max(32)
-    .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
+    .regex(
+      /^[a-zA-Z0-9_]+$/,
+      "Username can only contain letters, numbers, and underscores",
+    ),
   password: z.string().min(6),
 });
 
@@ -22,7 +25,9 @@ const loginSchema = z.object({
 authRouter.post("/register", async (req: Request, res: Response) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
+    res
+      .status(400)
+      .json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
     return;
   }
 
@@ -41,7 +46,9 @@ authRouter.post("/register", async (req: Request, res: Response) => {
 authRouter.post("/login", async (req: Request, res: Response) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
+    res
+      .status(400)
+      .json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
     return;
   }
 
@@ -57,11 +64,15 @@ authRouter.post("/login", async (req: Request, res: Response) => {
   }
 });
 
-authRouter.get("/me", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = await getMe(req.user!.userId);
-    res.json({ user });
-  } catch {
-    res.status(404).json({ error: "USER_NOT_FOUND" });
-  }
-});
+authRouter.get(
+  "/me",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const user = await getMe(req.user!.userId);
+      res.json({ user });
+    } catch {
+      res.status(404).json({ error: "USER_NOT_FOUND" });
+    }
+  },
+);

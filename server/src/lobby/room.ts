@@ -59,7 +59,9 @@ export class Room {
   }
 
   get connectedUserIds(): string[] {
-    return this.seats.filter((s) => s.userId && s.connected).map((s) => s.userId!);
+    return this.seats
+      .filter((s) => s.userId && s.connected)
+      .map((s) => s.userId!);
   }
 
   findSeatByUserId(userId: string): Seat | undefined {
@@ -114,7 +116,8 @@ export class Room {
   moveSeat(userId: string, targetIndex: number): boolean {
     const from = this.findSeatByUserId(userId);
     const to = this.seats[targetIndex];
-    if (!from || !to || to.userId !== null || targetIndex === from.index) return false;
+    if (!from || !to || to.userId !== null || targetIndex === from.index)
+      return false;
 
     to.userId = from.userId;
     to.username = from.username;

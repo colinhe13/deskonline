@@ -23,7 +23,10 @@ export class WebSocketGateway {
     this.wss = new WebSocketServer({ server, path: "/ws" });
     this.lobbyHandler = new LobbyHandler(this);
     this.wss.on("connection", (ws, req) => this.handleConnection(ws, req));
-    this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT_INTERVAL);
+    this.heartbeatTimer = setInterval(
+      () => this.heartbeat(),
+      HEARTBEAT_INTERVAL,
+    );
   }
 
   private handleConnection(ws: WebSocket, req: IncomingMessage) {
@@ -69,7 +72,12 @@ export class WebSocketGateway {
       }
     });
 
-    ws.send(createServerMessage("connected", { userId: user.userId, username: user.username }));
+    ws.send(
+      createServerMessage("connected", {
+        userId: user.userId,
+        username: user.username,
+      }),
+    );
     this.lobbyHandler.sendRoomListToUser(user.userId);
   }
 
@@ -77,7 +85,12 @@ export class WebSocketGateway {
     const client = this.clients.get(userId);
     if (!client) return;
     if (type.startsWith("room:") || type.startsWith("poker:")) {
-      this.lobbyHandler.handleMessage(userId, client.user.username, type, payload);
+      this.lobbyHandler.handleMessage(
+        userId,
+        client.user.username,
+        type,
+        payload,
+      );
     }
   }
 

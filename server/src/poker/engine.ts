@@ -1,4 +1,9 @@
-import { GameState, PlayerState, Card, HandResult as EvaluatedHand } from "./types.js";
+import {
+  GameState,
+  PlayerState,
+  Card,
+  HandResult as EvaluatedHand,
+} from "./types.js";
 import { createDeck, shuffle, deal } from "./deck.js";
 import { evaluateHand, compareHands, describeHand } from "./evaluator.js";
 import { calculateSidePots, isBettingRoundComplete } from "./betting.js";
@@ -18,7 +23,12 @@ export class PokerEngine {
   private onBroadcast: (type: string, payload: unknown) => void;
 
   constructor(
-    players: { userId: string; username: string; seatIndex: number; chips: number }[],
+    players: {
+      userId: string;
+      username: string;
+      seatIndex: number;
+      chips: number;
+    }[],
     smallBlind: number,
     bigBlind: number,
     dealerIndex: number,
@@ -59,7 +69,8 @@ export class PokerEngine {
 
   getStateForPlayer(userId: string): GameState {
     const stateCopy = JSON.parse(JSON.stringify(this.state)) as GameState;
-    const isShowdown = stateCopy.phase === "showdown" || stateCopy.phase === "settled";
+    const isShowdown =
+      stateCopy.phase === "showdown" || stateCopy.phase === "settled";
     for (const p of stateCopy.players) {
       if (p.userId !== userId && !(isShowdown && p.cardsRevealed)) {
         p.cards = [];
@@ -128,13 +139,17 @@ export class PokerEngine {
     // A short blind may leave the first seat unable to act (already all-in).
     let attempts = 0;
     while (
-      (s.players[s.currentPlayerIndex].allIn || s.players[s.currentPlayerIndex].folded) &&
+      (s.players[s.currentPlayerIndex].allIn ||
+        s.players[s.currentPlayerIndex].folded) &&
       attempts < n
     ) {
       s.currentPlayerIndex = (s.currentPlayerIndex + 1) % n;
       attempts++;
     }
-    if (s.players[s.currentPlayerIndex].allIn || s.players[s.currentPlayerIndex].folded) {
+    if (
+      s.players[s.currentPlayerIndex].allIn ||
+      s.players[s.currentPlayerIndex].folded
+    ) {
       // Nobody can act (e.g. both blinds all-in): run the board out to showdown.
       this.advancePhase();
       this.broadcastState();
@@ -234,7 +249,12 @@ export class PokerEngine {
     const n = s.players.length;
     let next = (s.currentPlayerIndex + 1) % n;
     let attempts = 0;
-    while ((s.players[next].folded || s.players[next].allIn || s.players[next].hasActed) && attempts < n) {
+    while (
+      (s.players[next].folded ||
+        s.players[next].allIn ||
+        s.players[next].hasActed) &&
+      attempts < n
+    ) {
       next = (next + 1) % n;
       attempts++;
     }
@@ -295,7 +315,10 @@ export class PokerEngine {
     const n = s.players.length;
     let start = (s.dealerIndex + 1) % n;
     let attempts = 0;
-    while ((s.players[start].folded || s.players[start].allIn) && attempts < n) {
+    while (
+      (s.players[start].folded || s.players[start].allIn) &&
+      attempts < n
+    ) {
       start = (start + 1) % n;
       attempts++;
     }
@@ -329,7 +352,9 @@ export class PokerEngine {
     const evaluated: Map<string, EvaluatedHand> = new Map();
 
     for (const pot of s.sidePots) {
-      const eligiblePlayers = activePlayers.filter((p) => pot.eligible.includes(p.userId));
+      const eligiblePlayers = activePlayers.filter((p) =>
+        pot.eligible.includes(p.userId),
+      );
       if (eligiblePlayers.length === 0) continue;
 
       let bestResult = null;
@@ -368,7 +393,10 @@ export class PokerEngine {
 
     this.lastHandWinners = new Set(winnings.keys());
     const result: HandResult = {
-      winners: [...winnings.entries()].map(([userId, amount]) => ({ userId, amount })),
+      winners: [...winnings.entries()].map(([userId, amount]) => ({
+        userId,
+        amount,
+      })),
       showdownCards,
       handNames,
       reason: "showdown",

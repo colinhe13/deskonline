@@ -1,6 +1,9 @@
 import { prisma } from "../db/client.js";
 
-export async function deductPoints(userId: string, amount: number): Promise<void> {
+export async function deductPoints(
+  userId: string,
+  amount: number,
+): Promise<void> {
   const result = await prisma.user.updateMany({
     where: { id: userId, points: { gte: amount } },
     data: { points: { decrement: amount } },

@@ -14,7 +14,9 @@ describe("protocol", () => {
 
   describe("parseClientMessage", () => {
     it("parses a valid client message", () => {
-      const msg = parseClientMessage(JSON.stringify({ type: "room:join", payload: { id: "1" } }));
+      const msg = parseClientMessage(
+        JSON.stringify({ type: "room:join", payload: { id: "1" } }),
+      );
       expect(msg).toEqual({ type: "room:join", payload: { id: "1" } });
     });
 

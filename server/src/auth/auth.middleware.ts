@@ -5,7 +5,11 @@ export interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
 }
 
-export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export function authMiddleware(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
     res.status(401).json({ error: "UNAUTHORIZED" });
