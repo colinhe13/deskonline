@@ -2,13 +2,46 @@
   <div class="action-bar" v-if="actions.length > 0">
     <div class="actions">
       <button
-        v-for="action in actions"
-        :key="action.type"
-        class="action-btn"
-        :class="'btn-' + action.type"
-        @click="handleAction(action)"
+        v-if="foldAction"
+        class="action-btn btn-fold"
+        @click="handleAction(foldAction)"
       >
-        {{ actionLabel(action) }}
+        {{ actionLabel(foldAction) }}
+      </button>
+      <button
+        v-if="callAction"
+        class="action-btn btn-call"
+        @click="handleAction(callAction)"
+      >
+        {{ actionLabel(callAction) }}
+      </button>
+      <button
+        v-if="showThirdPot"
+        class="action-btn btn-raise"
+        @click="emit('action', 'raise', thirdPotAmount)"
+      >
+        1/3
+      </button>
+      <button
+        v-if="showHalfPot"
+        class="action-btn btn-raise"
+        @click="emit('action', 'raise', halfPotAmount)"
+      >
+        1/2
+      </button>
+      <button
+        v-if="raiseAction"
+        class="action-btn btn-raise"
+        @click="handleAction(raiseAction)"
+      >
+        {{ actionLabel(raiseAction) }}
+      </button>
+      <button
+        v-if="allInAction"
+        class="action-btn btn-allin"
+        @click="handleAction(allInAction)"
+      >
+        {{ actionLabel(allInAction) }}
       </button>
     </div>
     <div v-if="showRaiseSlider" class="raise-control">
@@ -34,15 +67,39 @@ interface ActionOption {
   max?: number;
 }
 
-const props = defineProps<{ actions: ActionOption[] }>();
+const props = defineProps<{
+  actions: ActionOption[];
+  pot: number;
+  bigBlind: number;
+  chips: number;
+}>();
 const emit = defineEmits<{ action: [type: string, amount?: number] }>();
 
 const showRaiseSlider = ref(false);
 const raiseAmount = ref(0);
 
+const foldAction = computed(() => props.actions.find((a) => a.type === "fold"));
+const callAction = computed(() =>
+  props.actions.find((a) => a.type === "call" || a.type === "check"),
+);
 const raiseAction = computed(() => props.actions.find((a) => a.type === "raise"));
+const allInAction = computed(() => props.actions.find((a) => a.type === "allin"));
 const raiseMin = computed(() => raiseAction.value?.min || 0);
 const raiseMax = computed(() => raiseAction.value?.max || 0);
+
+const quickBetAmount = (fraction: number) =>
+  props.bigBlind > 0
+    ? Math.floor((props.pot * fraction) / props.bigBlind) * props.bigBlind
+    : 0;
+
+const thirdPotAmount = computed(() => quickBetAmount(1 / 3));
+const halfPotAmount = computed(() => quickBetAmount(1 / 2));
+
+const canQuickBet = (amount: number) =>
+  !!raiseAction.value && amount >= raiseMin.value && props.chips >= amount;
+
+const showThirdPot = computed(() => canQuickBet(thirdPotAmount.value));
+const showHalfPot = computed(() => canQuickBet(halfPotAmount.value));
 
 function actionLabel(action: ActionOption): string {
   switch (action.type) {
@@ -50,7 +107,7 @@ function actionLabel(action: ActionOption): string {
     case "check": return "过牌";
     case "call": return `跟注 ${action.amount}`;
     case "raise": return "加注";
-    case "allin": return `全押 ${action.amount}`;
+    case "allin": return `全下 ${action.amount}`;
     default: return action.type;
   }
 }
