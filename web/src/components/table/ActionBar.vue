@@ -264,4 +264,22 @@ function handleAction(action: ActionOption) {
   text-align: center;
   font-size: var(--fs-md);
 }
+
+@media (max-width: 480px) {
+  .action-bar {
+    padding: 0.7rem 0.6rem;
+    padding-bottom: calc(0.7rem + env(safe-area-inset-bottom));
+  }
+  .actions {
+    gap: 0.4rem;
+  }
+  .action-btn {
+    padding: 0.6rem 0.85rem;
+    font-size: var(--fs-sm);
+    min-height: 44px;
+  }
+  .raise-control input {
+    max-width: 150px;
+  }
+}
 </style>

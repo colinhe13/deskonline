@@ -40,8 +40,8 @@ defineExpose({ voice });
   font-size: 1.1rem;
   cursor: pointer;
   padding: 0.2rem;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 40px;
+  min-height: 40px;
   border-radius: 50%;
   transition: background var(--dur-fast);
 }

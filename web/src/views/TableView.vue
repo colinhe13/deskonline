@@ -264,8 +264,8 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--glass-border);
 }
 .table-header button {
-  padding: 0.45rem 0.9rem;
-  min-height: 38px;
+  padding: 0.4rem 0.85rem;
+  min-height: 44px;
   background: rgba(255, 255, 255, 0.1);
   color: var(--text);
   border: 1px solid var(--glass-border);
@@ -317,7 +317,42 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  padding-bottom: 90px;
+  padding-bottom: 110px;
+}
+@media (max-width: 768px) {
+  .table-main {
+    padding-bottom: 100px;
+  }
+  .table-header {
+    padding: 0.55rem 0.75rem;
+    gap: 0.5rem;
+  }
+  .table-header button {
+    padding: 0.35rem 0.6rem;
+    min-height: 44px;
+    font-size: var(--fs-sm);
+  }
+  .room-no {
+    font-size: var(--fs-xs);
+  }
+  .header-right {
+    gap: 0.35rem;
+  }
+  .hand-result-banner {
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .winner-name,
+  .winner-amount {
+    font-size: var(--fs-md);
+  }
+  .winner-hand {
+    font-size: var(--fs-xs);
+  }
+  .reveal-btn {
+    min-height: 40px;
+    padding: 0.3rem 0.8rem;
+  }
 }
 .hand-result-banner {
   position: fixed;
@@ -391,7 +426,7 @@ onUnmounted(() => {
 }
 .reveal-btn {
   padding: 0.35rem 0.95rem;
-  min-height: 36px;
+  min-height: 44px;
   background: linear-gradient(160deg, var(--gold), var(--gold-strong));
   color: #1c1304;
   font-weight: 600;

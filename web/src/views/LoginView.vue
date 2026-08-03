@@ -284,4 +284,12 @@ async function handleSubmit() {
 .toggle a:hover {
   color: var(--gold);
 }
+@media (max-width: 480px) {
+  .login-card {
+    padding: 1.75rem 1.25rem;
+  }
+  .suit {
+    font-size: 5rem;
+  }
+}
 </style>

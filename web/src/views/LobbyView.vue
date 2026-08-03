@@ -127,7 +127,7 @@ onUnmounted(() => {
 }
 .logout-btn {
   padding: 0.4rem 0.9rem;
-  min-height: 36px;
+  min-height: 44px;
   background: transparent;
   color: var(--text-dim);
   border: 1px solid var(--glass-border);
@@ -158,6 +158,34 @@ onUnmounted(() => {
   }
   .lobby-content {
     padding: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .lobby-header {
+    padding: 0.6rem 0.75rem;
+  }
+  .lobby-header h1 {
+    font-size: var(--fs-md);
+  }
+  .user-info {
+    gap: 0.5rem;
+  }
+  .points-pill {
+    padding: 0.25rem 0.6rem;
+    font-size: var(--fs-xs);
+  }
+  .logout-btn {
+    min-height: 40px;
+    padding: 0.3rem 0.7rem;
+    font-size: var(--fs-xs);
+  }
+  .lobby-content {
+    padding: 0.75rem;
+  }
+  .room-info {
+    gap: 0.6rem;
+    font-size: var(--fs-xs);
   }
 }
 </style>
