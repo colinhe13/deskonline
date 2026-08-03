@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Room } from "../lobby/room.js";
+import { RoomManager } from "../lobby/room.manager.js";
 
 function makeRoom(maxPlayers = 9) {
   return new Room("main", {
@@ -146,5 +147,19 @@ describe("Room system model", () => {
     const s1 = detail.seats.find((s) => s.userId === "u1")!;
     expect(s1.confirmed).toBe(true);
     expect(s1.buyIn).toBe(400);
+  });
+});
+
+describe("RoomManager defaults", () => {
+  it("system room uses default blinds/buy-in 1/2/150/750", () => {
+    const manager = new RoomManager();
+    const room = manager.getSystemRoom();
+    expect(room.settings).toEqual({
+      maxPlayers: 9,
+      smallBlind: 1,
+      bigBlind: 2,
+      minBuyIn: 150,
+      maxBuyIn: 750,
+    });
   });
 });
