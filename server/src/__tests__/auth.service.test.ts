@@ -19,6 +19,7 @@ vi.mock("bcryptjs", () => ({
 vi.mock("../config.js", () => ({
   config: {
     jwtSecret: "test-secret-key-for-testing-only",
+    registerCode: "214",
   },
 }));
 
@@ -57,7 +58,7 @@ describe("auth.service", () => {
         updatedAt: new Date(),
       });
 
-      const result = await register("alice", "password123");
+      const result = await register("alice", "password123", "214");
       expect(result.user.username).toBe("alice");
       expect(result.user.points).toBe(10000);
       expect(result.token).toBeTruthy();
@@ -74,9 +75,17 @@ describe("auth.service", () => {
         updatedAt: new Date(),
       });
 
-      await expect(register("alice", "password123")).rejects.toThrow(
+      await expect(register("alice", "password123", "214")).rejects.toThrow(
         "USERNAME_TAKEN",
       );
+    });
+
+    it("rejects a wrong register code before touching the database", async () => {
+      await expect(register("alice", "password123", "999")).rejects.toThrow(
+        "REGISTER_CODE_INVALID",
+      );
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
     });
   });
 

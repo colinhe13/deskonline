@@ -429,9 +429,7 @@ describe("lobby AI lifecycle", () => {
       expect(room.isSpectator("h2")).toBe(true);
       expect(room.findSeatByUserId("h2")).toBeUndefined();
       expect(
-        gateway.sent.some(
-          (m) => m.userId === "h2" && m.type === "room:error",
-        ),
+        gateway.sent.some((m) => m.userId === "h2" && m.type === "room:error"),
       ).toBe(false);
 
       const update = gateway.sent.find(
@@ -447,9 +445,7 @@ describe("lobby AI lifecycle", () => {
 
       // Spectators get no voice token.
       expect(
-        gateway.sent.some(
-          (m) => m.userId === "h2" && m.type === "voice:token",
-        ),
+        gateway.sent.some((m) => m.userId === "h2" && m.type === "voice:token"),
       ).toBe(false);
     });
 
@@ -500,8 +496,7 @@ describe("lobby AI lifecycle", () => {
 
       expect(
         gateway.sent.some(
-          (m) =>
-            m.type === "poker:hand_result" && m.userIds?.includes("h2"),
+          (m) => m.type === "poker:hand_result" && m.userIds?.includes("h2"),
         ),
       ).toBe(true);
     });
@@ -532,9 +527,7 @@ describe("lobby AI lifecycle", () => {
       expect(seat.index).toBe(1);
       expect(seat.confirmed).toBe(false); // must confirm the buy-in
       expect(
-        gateway.sent.some(
-          (m) => m.userId === "h2" && m.type === "voice:token",
-        ),
+        gateway.sent.some((m) => m.userId === "h2" && m.type === "voice:token"),
       ).toBe(true);
       room.settings.maxPlayers = 9;
     });
@@ -576,9 +569,7 @@ describe("lobby AI lifecycle", () => {
         ),
       ).toBe(true);
       expect(
-        gateway.sent.some(
-          (m) => m.userId === "h2" && m.type === "voice:token",
-        ),
+        gateway.sent.some((m) => m.userId === "h2" && m.type === "voice:token"),
       ).toBe(false);
     });
   });

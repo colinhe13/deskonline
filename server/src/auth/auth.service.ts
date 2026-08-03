@@ -8,7 +8,15 @@ export interface JwtPayload {
   username: string;
 }
 
-export async function register(username: string, password: string) {
+export async function register(
+  username: string,
+  password: string,
+  registerCode: string,
+) {
+  if (registerCode !== config.registerCode) {
+    throw new Error("REGISTER_CODE_INVALID");
+  }
+
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
     throw new Error("USERNAME_TAKEN");

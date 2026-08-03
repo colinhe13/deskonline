@@ -404,7 +404,12 @@ export class LobbyHandler {
     const spectatingRoom = roomManager.findRoomBySpectator(userId);
     if (spectatingRoom) {
       if (spectatingRoom.id === targetRoomId) {
-        this.handleSpectatorJoin(userId, username, spectatingRoom, p?.seatIndex);
+        this.handleSpectatorJoin(
+          userId,
+          username,
+          spectatingRoom,
+          p?.seatIndex,
+        );
         return;
       }
       spectatingRoom.removeSpectator(userId);

@@ -5,6 +5,7 @@ export const config = {
   port: parseInt(process.env.PORT || "3001", 10),
   databaseUrl: process.env.DATABASE_URL || "",
   jwtSecret: process.env.JWT_SECRET || "",
+  registerCode: process.env.REGISTER_CODE || "214",
   livekitUrl: process.env.LIVEKIT_URL || "",
   livekitPublicUrl:
     process.env.LIVEKIT_PUBLIC_URL || process.env.LIVEKIT_URL || "",

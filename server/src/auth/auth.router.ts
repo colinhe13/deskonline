@@ -15,6 +15,7 @@ const registerSchema = z.object({
       "Username can only contain letters, numbers, and underscores",
     ),
   password: z.string().min(6),
+  registerCode: z.string().min(1),
 });
 
 const loginSchema = z.object({
@@ -32,11 +33,19 @@ authRouter.post("/register", async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await register(parsed.data.username, parsed.data.password);
+    const result = await register(
+      parsed.data.username,
+      parsed.data.password,
+      parsed.data.registerCode,
+    );
     res.status(201).json(result);
   } catch (err) {
     if (err instanceof Error && err.message === "USERNAME_TAKEN") {
       res.status(409).json({ error: "USERNAME_TAKEN" });
+      return;
+    }
+    if (err instanceof Error && err.message === "REGISTER_CODE_INVALID") {
+      res.status(400).json({ error: "REGISTER_CODE_INVALID" });
       return;
     }
     res.status(500).json({ error: "INTERNAL_ERROR" });
