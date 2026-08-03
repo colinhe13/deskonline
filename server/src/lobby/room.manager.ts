@@ -4,10 +4,10 @@ const SYSTEM_ROOM_ID = "main";
 
 const DEFAULT_SETTINGS: RoomSettings = {
   maxPlayers: 9,
-  smallBlind: 10,
-  bigBlind: 20,
-  minBuyIn: 200,
-  maxBuyIn: 2000,
+  smallBlind: 1,
+  bigBlind: 2,
+  minBuyIn: 150,
+  maxBuyIn: 750,
 };
 
 export class RoomManager {
