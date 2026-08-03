@@ -38,6 +38,9 @@ export async function callLlm(
         ],
         temperature: 0.3,
         max_tokens: 200,
+        // deepseek-v4-flash is a reasoning model: its thinking tokens would
+        // consume the whole max_tokens budget and leave content empty.
+        thinking: { type: "disabled" },
       }),
       signal: controller.signal,
     });

@@ -28,6 +28,12 @@ vi.mock("../ai/llm.client.js", () => ({
   callLlm: vi.fn().mockResolvedValue({ action: "fold" }),
 }));
 
+// Wraps the real decideAiAction so tests can simulate a hung decision.
+vi.mock("../ai/decision.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ai/decision.js")>();
+  return { ...actual, decideAiAction: vi.fn(actual.decideAiAction) };
+});
+
 vi.mock("../voice/livekit.service.js", () => ({
   livekitService: {
     getRoomName: () => "room",
@@ -51,6 +57,7 @@ vi.mock("../poker/deck.js", async (importOriginal) => {
 import { prisma } from "../db/client.js";
 import { deductPoints, addPoints } from "../points/points.service.js";
 import { callLlm } from "../ai/llm.client.js";
+import { decideAiAction } from "../ai/decision.js";
 import { ensureAiAccounts, resetAiStateForTests } from "../ai/accounts.js";
 import { LobbyHandler } from "../lobby/lobby.handler.js";
 import { roomManager } from "../lobby/room.manager.js";
@@ -556,6 +563,33 @@ describe("lobby AI lifecycle", () => {
       expect(
         engine.getState().players.find((p) => p.isAi)?.folded ?? true,
       ).toBe(true);
+    });
+
+    it("watchdog forces a fallback action if the decision hangs forever", async () => {
+      const original = vi.mocked(decideAiAction).getMockImplementation();
+      vi.useFakeTimers();
+      try {
+        vi.mocked(decideAiAction).mockReturnValue(
+          new Promise(() => {}) as never,
+        );
+        await joinAndConfirm("h1", "alice");
+        await addAiAs("h1");
+        room.status = "playing";
+        handler["startEngine"](room);
+
+        const engine = handler["engines"].get(room.id)!;
+        engine.handleAction("h1", "raise", 4);
+        // Watchdog fires at aiTimeoutMs + 5000 even though decide never
+        // resolves; the fallback calls the raise and the hand advances.
+        await vi.advanceTimersByTimeAsync(16000);
+        expect(engine.getState().phase).toBe("flop");
+        expect(
+          engine.getState().actionLog.some((l) => l.includes("call")),
+        ).toBe(true);
+      } finally {
+        vi.useRealTimers();
+        if (original) vi.mocked(decideAiAction).mockImplementation(original);
+      }
     });
 
     it("pauses with autoResume when a human busts, resuming after rebuy", async () => {

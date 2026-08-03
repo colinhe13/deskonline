@@ -6,6 +6,7 @@ import { Room } from "./room.js";
 import { livekitService } from "../voice/livekit.service.js";
 import { isAiUserId, pickFreeAi } from "../ai/accounts.js";
 import { decideAiAction } from "../ai/decision.js";
+import { config } from "../config.js";
 import { ActionOption } from "../poker/types.js";
 
 const SETTLEMENT_WINDOW_MS = 5000;
@@ -200,7 +201,18 @@ export class LobbyHandler {
       this.aiPending.delete(room.id);
       const gen = this.engineGeneration.get(room.id) ?? 0;
       setTimeout(() => {
-        void this.handleHandEnd(room, gen);
+        this.handleHandEnd(room, gen).catch((err) => {
+          // A settlement failure (e.g. transient DB error) must not leave the
+          // room stuck in "playing" with no engine.
+          console.error("[lobby] hand settlement failed", err);
+          if (!this.engines.get(room.id) && room.status === "playing") {
+            room.status = "waiting";
+            room.autoResume = true;
+            room.broadcast(this.gateway, "room:state", {
+              room: room.toDetail(),
+            });
+          }
+        });
       }, SETTLEMENT_WINDOW_MS);
     }
   }
@@ -220,39 +232,68 @@ export class LobbyHandler {
     if (!current || current.userId !== userId) return;
 
     this.aiPending.set(roomId, userId);
-    const actions = engine.getAvailableActionsForPlayer(userId);
+    console.info(`[ai] turn scheduled for ${userId}`);
 
-    decideAiAction(state, userId, actions)
+    // Last-resort watchdog: whatever happens inside the LLM path, this turn MUST
+    // produce a legal action within a bounded time or the table stalls.
+    const watchdog = setTimeout(() => {
+      const eng = this.engines.get(roomId);
+      // A rebuilt engine owns a fresh pending marker; never touch it here.
+      if (!eng || eng !== engine) return;
+      const st = eng.getState();
+      if (st.phase === "showdown" || st.phase === "settled") return;
+      if (!this.consumeAiPending(roomId, userId)) return;
+      console.warn(`[ai] watchdog forcing fallback action for ${userId}`);
+      this.applyFallbackAction(eng, userId);
+    }, config.aiTimeoutMs + 5000);
+
+    decideAiAction(state, userId, engine.getAvailableActionsForPlayer(userId))
       .then(({ action, amount }) => {
+        clearTimeout(watchdog);
         const eng = this.engines.get(roomId);
-        // The table may have changed while the LLM was thinking.
-        if (eng !== engine) return;
+        // The table may have changed while the LLM was thinking; a rebuilt
+        // engine has already rescheduled this AI's turn on its own.
+        if (!eng || eng !== engine) return;
+        if (!this.consumeAiPending(roomId, userId)) return;
         const st = eng.getState();
         if (st.phase === "showdown" || st.phase === "settled") return;
         const cur = st.players[st.currentPlayerIndex];
         if (!cur || cur.userId !== userId) return;
 
         if (!eng.handleAction(userId, action, amount)) {
-          const fallback = actions.some((a) => a.type === "check")
-            ? "check"
-            : "fold";
-          eng.handleAction(userId, fallback);
+          console.warn(`[ai] rejected action ${action}, applying fallback`);
+          this.applyFallbackAction(eng, userId);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        clearTimeout(watchdog);
+        console.error("[ai] decision failed", err);
         const eng = this.engines.get(roomId);
-        if (eng === engine) {
-          const fallback = actions.some((a) => a.type === "check")
-            ? "check"
-            : "fold";
-          eng.handleAction(userId, fallback);
-        }
-      })
-      .finally(() => {
-        if (this.aiPending.get(roomId) === userId) {
-          this.aiPending.delete(roomId);
-        }
+        if (!eng || eng !== engine) return;
+        if (!this.consumeAiPending(roomId, userId)) return;
+        this.applyFallbackAction(eng, userId);
       });
+  }
+
+  // Atomically claims the pending-AI slot so the decide callback and the
+  // watchdog can never both act on the same turn.
+  private consumeAiPending(roomId: string, userId: string): boolean {
+    if (this.aiPending.get(roomId) !== userId) return false;
+    this.aiPending.delete(roomId);
+    return true;
+  }
+
+  // check -> call -> fold -> allin: every branch is legal by construction,
+  // so a fallback can never be rejected and stall the hand.
+  private applyFallbackAction(eng: PokerEngine, userId: string) {
+    const actions = eng.getAvailableActionsForPlayer(userId);
+    const pick =
+      actions.find((a) => a.type === "check") ||
+      actions.find((a) => a.type === "call") ||
+      actions.find((a) => a.type === "fold") ||
+      actions.find((a) => a.type === "allin");
+    if (!pick) return;
+    eng.handleAction(userId, pick.type, pick.amount);
   }
 
   // ------------------------------------------------------------------
@@ -768,7 +809,11 @@ export class LobbyHandler {
       if (!currentRoom) return;
       const seat = currentRoom.findSeatByUserId(userId);
       if (seat && !seat.connected) {
-        await this.ejectPlayer(currentRoom, userId);
+        try {
+          await this.ejectPlayer(currentRoom, userId);
+        } catch (err) {
+          console.error("[lobby] disconnect eject failed", err);
+        }
       }
     }, 60_000);
   }

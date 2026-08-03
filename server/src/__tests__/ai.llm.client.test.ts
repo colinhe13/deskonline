@@ -47,6 +47,9 @@ describe("llm.client", () => {
     expect(body.model).toBe("test-model");
     expect(body.temperature).toBe(0.3);
     expect(body.max_tokens).toBe(200);
+    // Reasoning models must have thinking disabled, otherwise reasoning
+    // tokens exhaust max_tokens and content comes back empty.
+    expect(body.thinking).toEqual({ type: "disabled" });
     expect(body.messages).toEqual([
       { role: "system", content: "SYS" },
       { role: "user", content: "USER" },
