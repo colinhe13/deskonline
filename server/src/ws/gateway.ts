@@ -2,7 +2,11 @@ import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage } from "http";
 import { Server } from "http";
 import { verifyToken, JwtPayload } from "../auth/auth.service.js";
-import { createServerMessage, parseClientMessage } from "./protocol.js";
+import {
+  createServerMessage,
+  parseClientMessage,
+  shouldRouteToLobby,
+} from "./protocol.js";
 import { LobbyHandler } from "../lobby/lobby.handler.js";
 
 interface ConnectedClient {
@@ -84,7 +88,7 @@ export class WebSocketGateway {
   private handleMessage(userId: string, type: string, payload: unknown) {
     const client = this.clients.get(userId);
     if (!client) return;
-    if (type.startsWith("room:") || type.startsWith("poker:")) {
+    if (shouldRouteToLobby(type)) {
       this.lobbyHandler.handleMessage(
         userId,
         client.user.username,

@@ -23,3 +23,15 @@ export function parseClientMessage(data: string): ClientMessage | null {
     return null;
   }
 }
+
+const LOBBY_PREFIXES = ["room:", "poker:", "ai:"];
+
+// The gateway forwards only these messages to the LobbyHandler.
+// "reconnect" is routed explicitly (it carries no prefix); without this,
+// reconnect snapshots and voice-token resends would never run.
+export function shouldRouteToLobby(type: string): boolean {
+  return (
+    type === "reconnect" ||
+    LOBBY_PREFIXES.some((prefix) => type.startsWith(prefix))
+  );
+}
