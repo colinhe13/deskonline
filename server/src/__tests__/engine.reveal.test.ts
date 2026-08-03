@@ -160,3 +160,38 @@ describe("reveal edge cases", () => {
     expect(engine.revealCards("u0")).toBe(false); // phase is preflop again
   });
 });
+
+describe("spectator view privacy", () => {
+  function spectatorCardCounts(engine: PokerEngine): number[] {
+    return engine.getStateForSpectator().players.map((p) => p.cards.length);
+  }
+
+  it("preflop: spectator sees no hole cards at all", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(spectatorCardCounts(engine)).toEqual([0, 0, 0]);
+  });
+
+  it("showdown: revealed participants visible, folded players hidden", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "allin", 999)).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+
+    expect(spectatorCardCounts(engine)).toEqual([2, 2, 0]);
+  });
+
+  it("fold win: winner's cards stay hidden for spectators until revealed", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+
+    expect(spectatorCardCounts(engine)).toEqual([0, 0, 0]);
+    expect(engine.revealCards("u0")).toBe(true);
+    expect(spectatorCardCounts(engine)).toEqual([2, 0, 0]);
+  });
+});

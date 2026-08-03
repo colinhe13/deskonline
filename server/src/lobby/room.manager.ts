@@ -40,6 +40,13 @@ export class RoomManager {
     return undefined;
   }
 
+  findRoomBySpectator(userId: string): Room | undefined {
+    for (const room of this.rooms.values()) {
+      if (room.isSpectator(userId)) return room;
+    }
+    return undefined;
+  }
+
   listRooms() {
     return [...this.rooms.values()].map((r) => r.toSummary());
   }

@@ -188,3 +188,70 @@ describe("RoomManager defaults", () => {
     });
   });
 });
+
+describe("Room spectators", () => {
+  it("addSpectator dedupes; removeSpectator/isSpectator behave", () => {
+    const room = makeRoom();
+    expect(room.isSpectator("s1")).toBe(false);
+
+    room.addSpectator("s1", "Watcher");
+    room.addSpectator("s1", "Watcher"); // duplicate is a no-op
+    expect(room.spectators).toHaveLength(1);
+    expect(room.isSpectator("s1")).toBe(true);
+
+    expect(room.removeSpectator("s1")).toBe(true);
+    expect(room.removeSpectator("s1")).toBe(false);
+    expect(room.isSpectator("s1")).toBe(false);
+  });
+
+  it("spectators do not occupy seats or count as players", () => {
+    const room = makeRoom(2);
+    room.addSpectator("s1", "Watcher");
+    expect(room.playerCount).toBe(0);
+    expect(room.isFull).toBe(false);
+    expect(room.hostId).toBeNull();
+  });
+
+  it("toSummary/toDetail expose spectatorCount and spectators", () => {
+    const room = makeRoom();
+    room.addPlayer("u1", "P1");
+    room.addSpectator("s1", "Watcher");
+
+    expect(room.toSummary().spectatorCount).toBe(1);
+    const detail = room.toDetail();
+    expect(detail.spectators).toEqual([{ userId: "s1", username: "Watcher" }]);
+  });
+
+  it("broadcast reaches connected seats plus spectators", () => {
+    const room = makeRoom();
+    room.addPlayer("u1", "P1"); // connected on add
+    room.addPlayer("u2", "P2");
+    room.markDisconnected("u2");
+    room.addSpectator("s1", "Watcher");
+
+    const calls: { ids: string[]; type: string }[] = [];
+    const fakeGateway = {
+      broadcast: (ids: string[], type: string) => {
+        calls.push({ ids, type });
+      },
+    };
+    room.broadcast(fakeGateway as never, "room:state", {});
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].ids.sort()).toEqual(["s1", "u1"]);
+  });
+});
+
+describe("RoomManager spectator lookup", () => {
+  it("findRoomBySpectator locates the room a user spectates", () => {
+    const manager = new RoomManager();
+    const room = manager.getSystemRoom();
+    expect(manager.findRoomBySpectator("s1")).toBeUndefined();
+
+    room.addSpectator("s1", "Watcher");
+    expect(manager.findRoomBySpectator("s1")).toBe(room);
+    // A seated player is not a spectator.
+    room.addPlayer("u1", "P1");
+    expect(manager.findRoomBySpectator("u1")).toBeUndefined();
+  });
+});

@@ -81,6 +81,19 @@ export class PokerEngine {
     return stateCopy;
   }
 
+  // Spectators never see hole cards, except cards revealed at showdown.
+  getStateForSpectator(): GameState {
+    const stateCopy = JSON.parse(JSON.stringify(this.state)) as GameState;
+    const isShowdown =
+      stateCopy.phase === "showdown" || stateCopy.phase === "settled";
+    for (const p of stateCopy.players) {
+      if (!(isShowdown && p.cardsRevealed)) {
+        p.cards = [];
+      }
+    }
+    return stateCopy;
+  }
+
   startHand() {
     const s = this.state;
     s.phase = "preflop";

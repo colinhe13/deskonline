@@ -29,6 +29,11 @@ export interface PendingJoin {
   aiUserId: string;
 }
 
+export interface Spectator {
+  userId: string;
+  username: string;
+}
+
 export type RoomStatus = "waiting" | "playing";
 
 export class Room {
@@ -44,6 +49,8 @@ export class Room {
   pendingLeaveUserIds: string[] = [];
   // A human waiting for an AI seat to free up (full-room queue).
   pendingJoin: PendingJoin | null = null;
+  // Users watching the table without occupying a seat.
+  spectators: Spectator[] = [];
   // Seat index of the last dealer, kept across engine rebuilds so the button
   // rotation survives hand-boundary reconstruction.
   dealerSeatIndex: number | null = null;
@@ -81,6 +88,15 @@ export class Room {
       .map((s) => s.userId!);
   }
 
+  // Everyone who should receive room broadcasts: seated players with a live
+  // connection plus spectators (they hold a WS by construction).
+  get broadcastRecipientIds(): string[] {
+    return [
+      ...this.connectedUserIds,
+      ...this.spectators.map((sp) => sp.userId),
+    ];
+  }
+
   findSeatByUserId(userId: string): Seat | undefined {
     return this.seats.find((s) => s.userId === userId);
   }
@@ -99,6 +115,24 @@ export class Room {
 
   hasHuman(): boolean {
     return this.humanSeats().length > 0;
+  }
+
+  addSpectator(userId: string, username: string): Spectator {
+    const existing = this.spectators.find((sp) => sp.userId === userId);
+    if (existing) return existing;
+    const spectator: Spectator = { userId, username };
+    this.spectators.push(spectator);
+    return spectator;
+  }
+
+  removeSpectator(userId: string): boolean {
+    const before = this.spectators.length;
+    this.spectators = this.spectators.filter((sp) => sp.userId !== userId);
+    return this.spectators.length < before;
+  }
+
+  isSpectator(userId: string): boolean {
+    return this.spectators.some((sp) => sp.userId === userId);
   }
 
   addPlayer(userId: string, username: string, isAi = false): Seat {
@@ -199,7 +233,7 @@ export class Room {
   }
 
   broadcast(gateway: WebSocketGateway, type: string, payload: unknown) {
-    gateway.broadcast(this.connectedUserIds, type, payload);
+    gateway.broadcast(this.broadcastRecipientIds, type, payload);
   }
 
   toSummary() {
@@ -208,6 +242,7 @@ export class Room {
       hostId: this.hostId,
       playerCount: this.playerCount,
       confirmedCount: this.confirmedCount,
+      spectatorCount: this.spectators.length,
       maxPlayers: this.settings.maxPlayers,
       smallBlind: this.settings.smallBlind,
       bigBlind: this.settings.bigBlind,
@@ -230,6 +265,10 @@ export class Room {
         connected: s.connected,
         confirmed: s.confirmed,
         isAi: s.isAi,
+      })),
+      spectators: this.spectators.map((sp) => ({
+        userId: sp.userId,
+        username: sp.username,
       })),
     };
   }
