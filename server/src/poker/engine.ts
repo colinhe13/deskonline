@@ -121,6 +121,22 @@ export class PokerEngine {
       s.currentPlayerIndex = (bbIdx + 1) % n;
     }
 
+    // A short blind may leave the first seat unable to act (already all-in).
+    let attempts = 0;
+    while (
+      (s.players[s.currentPlayerIndex].allIn || s.players[s.currentPlayerIndex].folded) &&
+      attempts < n
+    ) {
+      s.currentPlayerIndex = (s.currentPlayerIndex + 1) % n;
+      attempts++;
+    }
+    if (s.players[s.currentPlayerIndex].allIn || s.players[s.currentPlayerIndex].folded) {
+      // Nobody can act (e.g. both blinds all-in): run the board out to showdown.
+      this.advancePhase();
+      this.broadcastState();
+      return;
+    }
+
     this.broadcastState();
   }
 
