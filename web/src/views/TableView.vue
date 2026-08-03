@@ -115,7 +115,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useGameStore } from "../stores/game";
 import { useWebSocket } from "../composables/useWebSocket";
@@ -135,10 +135,12 @@ import type {
 
 const auth = useAuthStore();
 const game = useGameStore();
+const route = useRoute();
 const router = useRouter();
 const {
   isReconnecting: reconnecting,
   send,
+  isOpen,
   onMessage,
   offMessage,
 } = useWebSocket();
@@ -274,12 +276,35 @@ function removeAi(targetUserId: string) {
   send("ai:remove", { targetUserId });
 }
 
+function handleReconnectSuccess(payload: unknown) {
+  const p = payload as { roomId?: string };
+  if (p.roomId && route.params.id !== p.roomId) {
+    router.replace("/table/" + p.roomId);
+  }
+}
+
+// Not seated anywhere: entering the table URL directly (or after the 60s
+// eject window) should behave like the lobby entry — join the target room.
+function handleReconnectFailed() {
+  const roomId = route.params.id;
+  if (typeof roomId === "string" && roomId) {
+    send("room:join", { roomId });
+  }
+}
+
 onMounted(() => {
   game.setMyUserId(auth.user?.id ?? null);
   onMessage("room:state", handleRoomState);
   onMessage("poker:update", handlePokerUpdate);
   onMessage("poker:hand_result", handleHandResult);
   onMessage("room:error", handleRoomError);
+  onMessage("reconnect:success", handleReconnectSuccess);
+  onMessage("reconnect:failed", handleReconnectFailed);
+  // The global onopen already requests a snapshot; if the socket was open
+  // before this view mounted, request it here so the state is never stale.
+  if (isOpen()) {
+    send("reconnect", {});
+  }
 });
 
 onUnmounted(() => {
@@ -288,6 +313,8 @@ onUnmounted(() => {
   offMessage("poker:update", handlePokerUpdate);
   offMessage("poker:hand_result", handleHandResult);
   offMessage("room:error", handleRoomError);
+  offMessage("reconnect:success", handleReconnectSuccess);
+  offMessage("reconnect:failed", handleReconnectFailed);
 });
 </script>
 

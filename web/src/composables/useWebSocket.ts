@@ -35,9 +35,10 @@ export function useWebSocket() {
 
     ws.onopen = () => {
       isConnected.value = true;
-      if (reconnectAttempts > 0) {
-        send("reconnect", {});
-      }
+      // Always request a full snapshot on connect — covers WS drop-reconnect,
+      // page refresh and direct URL entry. Server-side is idempotent: users
+      // without an active room only get reconnect:failed.
+      send("reconnect", {});
       reconnectAttempts = 0;
       isReconnecting.value = false;
     };
@@ -102,6 +103,10 @@ export function useWebSocket() {
     }
   }
 
+  function isOpen() {
+    return ws?.readyState === WebSocket.OPEN;
+  }
+
   function onMessage(type: string, handler: MessageHandler) {
     if (!handlers.has(type)) {
       handlers.set(type, new Set());
@@ -134,6 +139,7 @@ export function useWebSocket() {
     connect,
     disconnect,
     send,
+    isOpen,
     onMessage,
     offMessage,
   };
