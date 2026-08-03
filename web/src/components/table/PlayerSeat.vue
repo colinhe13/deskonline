@@ -28,10 +28,19 @@
         <span class="seat-name">
           {{ seat.username }}
           <span v-if="isHost" class="host-badge">房主</span>
+          <span v-if="seat.isAi" class="ai-badge">AI</span>
           <span v-if="isMe" class="me-badge">我</span>
         </span>
         <span class="seat-chips">{{ seat.chips }}</span>
       </div>
+      <button
+        v-if="canRemoveAi"
+        class="remove-ai-btn"
+        title="移除 AI"
+        @click.stop="$emit('remove-ai')"
+      >
+        移除
+      </button>
       <div v-if="seat.bet > 0" class="seat-bet">{{ seat.bet }}</div>
       <div v-if="!seat.confirmed" class="unconfirmed-badge">待确认</div>
       <div v-if="seat.folded" class="fold-badge">弃牌</div>
@@ -60,6 +69,7 @@ interface SeatView {
   folded: boolean;
   allIn: boolean;
   isDealer: boolean;
+  isAi?: boolean;
   cards: { rank: string; suit: string }[];
 }
 
@@ -69,7 +79,10 @@ const props = defineProps<{
   isMe: boolean;
   isCurrent: boolean;
   isWinner: boolean;
+  canRemoveAi?: boolean;
 }>();
+
+defineEmits<{ "remove-ai": [] }>();
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #e05252, #7f2b2b)",
@@ -227,6 +240,32 @@ const avatarStyle = computed(() => {
   border-radius: 3px;
   flex-shrink: 0;
 }
+.ai-badge {
+  background: linear-gradient(135deg, #4a90d9, #8b5cf6);
+  color: #fff;
+  font-size: 0.55rem;
+  padding: 0 3px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.remove-ai-btn {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  z-index: 2;
+  display: none;
+  padding: 1px 6px;
+  min-height: 0;
+  font-size: 0.55rem;
+  color: var(--text);
+  background: rgba(169, 50, 38, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.player-seat:hover .remove-ai-btn {
+  display: block;
+}
 .me-badge {
   background: var(--info);
   color: var(--text);
@@ -301,7 +340,8 @@ const avatarStyle = computed(() => {
     padding: 0.1rem 0.4rem;
   }
   .host-badge,
-  .me-badge {
+  .me-badge,
+  .ai-badge {
     font-size: 0.45rem;
     padding: 0 2px;
   }

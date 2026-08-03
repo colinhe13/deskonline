@@ -15,6 +15,8 @@
           :is-me="seat.userId === myUserId"
           :is-current="isCurrentSeat(seat)"
           :is-winner="isWinner(seat)"
+          :can-remove-ai="!!isViewerHost && !!seat.isAi"
+          @remove-ai="onRemoveAi(seat)"
         />
       </div>
       <div class="table-center">
@@ -46,9 +48,17 @@ const props = defineProps<{
   pokerState: PokerState | null;
   myUserId: string | null;
   handResult: HandResultInfo | null;
+  isViewerHost?: boolean;
 }>();
 
-const emit = defineEmits<{ sit: [seatIndex: number] }>();
+const emit = defineEmits<{
+  sit: [seatIndex: number];
+  "remove-ai": [userId: string];
+}>();
+
+function onRemoveAi(seat: MergedSeat) {
+  if (seat.userId) emit("remove-ai", seat.userId);
+}
 
 const canMoveSeats = computed(
   () =>

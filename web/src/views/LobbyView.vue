@@ -14,11 +14,16 @@
     <main class="lobby-content">
       <RoomList :rooms="lobby.rooms" @join="joinRoom" />
     </main>
+    <Transition name="toast">
+      <div v-if="toastMsg" class="lobby-toast" :class="toastKind">
+        {{ toastMsg }}
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useLobbyStore } from "../stores/lobby";
@@ -55,15 +60,44 @@ function joinRoom(room: RoomSummary) {
   send("room:join", { roomId: room.id });
 }
 
+const toastMsg = ref("");
+const toastKind = ref<"error" | "info">("info");
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(message: string, kind: "error" | "info") {
+  toastMsg.value = message;
+  toastKind.value = kind;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (toastMsg.value = ""), 3000);
+}
+
+function handleRoomError(payload: unknown) {
+  const p = payload as { message?: string };
+  showToast(p.message || "操作失败", "error");
+}
+
+function handleJoinQueued(payload: unknown) {
+  const p = payload as { seatIndex?: number };
+  showToast(
+    `已加入排队，AI 将在本手牌结束后让座（座位 ${p.seatIndex}）`,
+    "info",
+  );
+}
+
 onMounted(() => {
   onMessage("room:list", handleRoomList);
   onMessage("room:state", handleRoomState);
+  onMessage("room:error", handleRoomError);
+  onMessage("room:join-queued", handleJoinQueued);
   send("room:list:request", {});
 });
 
 onUnmounted(() => {
+  if (toastTimer) clearTimeout(toastTimer);
   offMessage("room:list", handleRoomList);
   offMessage("room:state", handleRoomState);
+  offMessage("room:error", handleRoomError);
+  offMessage("room:join-queued", handleJoinQueued);
 });
 </script>
 
@@ -155,6 +189,35 @@ onUnmounted(() => {
   padding: 1.5rem 2rem;
   max-width: 800px;
   margin: 0 auto;
+}
+.lobby-toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  z-index: var(--z-toast);
+  box-shadow: var(--shadow-md);
+}
+.lobby-toast.error {
+  background: linear-gradient(160deg, var(--danger), #a93226);
+}
+.lobby-toast.info {
+  background: linear-gradient(160deg, #2a5a8c, #4a90d9);
+}
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 16px);
 }
 
 @media (max-width: 768px) {

@@ -9,6 +9,7 @@ export interface SeatInfo {
   buyIn: number;
   connected: boolean;
   confirmed: boolean;
+  isAi?: boolean;
 }
 
 export interface RoomDetail {
@@ -22,6 +23,7 @@ export interface RoomDetail {
   minBuyIn: number;
   maxBuyIn: number;
   status: string;
+  autoResume?: boolean;
   seats: SeatInfo[];
 }
 
@@ -43,6 +45,7 @@ export interface PokerPlayer {
   isDealer: boolean;
   isSmallBlind: boolean;
   isBigBlind: boolean;
+  isAi?: boolean;
 }
 
 export interface PokerState {
@@ -84,7 +87,9 @@ export const useGameStore = defineStore("game", () => {
 
   const currentPlayer = computed(() => {
     if (!pokerState.value) return null;
-    return pokerState.value.players[pokerState.value.currentPlayerIndex] || null;
+    return (
+      pokerState.value.players[pokerState.value.currentPlayerIndex] || null
+    );
   });
 
   function setRoom(newRoom: RoomDetail | null) {

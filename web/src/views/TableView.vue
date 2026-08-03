@@ -5,6 +5,14 @@
       <span class="room-no">房间 #{{ game.room?.id }}</span>
       <div class="header-right">
         <VoicePanel v-if="VOICE_ENABLED" />
+        <button
+          v-if="isHost"
+          class="add-ai-btn"
+          :disabled="isRoomFull"
+          @click="addAi"
+        >
+          添加 AI
+        </button>
         <template v-if="isHost && game.room?.status === 'waiting'">
           <button @click="showSettings = true">设置</button>
           <button @click="showTransfer = true">移交房主</button>
@@ -22,6 +30,12 @@
       至少需要 2 名玩家确认带入后才能开始（已确认
       {{ game.room?.confirmedCount ?? 0 }}）
     </p>
+    <p
+      v-if="game.room?.status === 'waiting' && game.room.autoResume"
+      class="pause-hint"
+    >
+      牌局暂停：等待输光玩家重新带入
+    </p>
 
     <main class="table-main">
       <PokerTable
@@ -29,7 +43,9 @@
         :poker-state="game.pokerState"
         :my-user-id="game.myUserId"
         :hand-result="game.handResult"
+        :is-viewer-host="isHost"
         @sit="moveSeat"
+        @remove-ai="removeAi"
       />
     </main>
 
@@ -140,6 +156,9 @@ const mySeat = computed(() =>
   game.room?.seats.find((s) => s.userId === game.myUserId),
 );
 const canStart = computed(() => (game.room?.confirmedCount ?? 0) >= 2);
+const isRoomFull = computed(
+  () => !!game.room && game.room.playerCount >= game.room.maxPlayers,
+);
 const needConfirmBuyIn = computed(
   () =>
     game.room?.status === "waiting" && mySeat.value && !mySeat.value.confirmed,
@@ -247,6 +266,14 @@ function startGame() {
   send("room:start", {});
 }
 
+function addAi() {
+  send("ai:add", {});
+}
+
+function removeAi(targetUserId: string) {
+  send("ai:remove", { targetUserId });
+}
+
 onMounted(() => {
   game.setMyUserId(auth.user?.id ?? null);
   onMessage("room:state", handleRoomState);
@@ -332,6 +359,17 @@ onUnmounted(() => {
   cursor: not-allowed;
   transform: none !important;
 }
+.add-ai-btn {
+  background: linear-gradient(160deg, #4a90d9, #8b5cf6) !important;
+  color: #fff !important;
+  font-weight: 600;
+  border-color: transparent !important;
+}
+.add-ai-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none !important;
+}
 .header-right {
   display: flex;
   align-items: center;
@@ -343,6 +381,14 @@ onUnmounted(() => {
   font-size: var(--fs-xs);
   padding: 0.35rem 1rem;
   background: rgba(0, 0, 0, 0.25);
+}
+.pause-hint {
+  text-align: center;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  padding: 0.35rem 1rem;
+  background: rgba(240, 199, 94, 0.18);
+  border-bottom: 1px solid rgba(240, 199, 94, 0.3);
 }
 .table-main {
   flex: 1;

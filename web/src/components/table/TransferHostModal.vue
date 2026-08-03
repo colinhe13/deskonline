@@ -34,7 +34,7 @@ const props = defineProps<{ seats: SeatInfo[]; myUserId: string | null }>();
 defineEmits<{ close: []; transfer: [userId: string] }>();
 
 const candidates = computed(() =>
-  props.seats.filter((s) => s.userId && s.userId !== props.myUserId),
+  props.seats.filter((s) => s.userId && s.userId !== props.myUserId && !s.isAi),
 );
 </script>
 
