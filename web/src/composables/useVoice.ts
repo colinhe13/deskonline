@@ -98,5 +98,12 @@ export function useVoice() {
     participants.value = list;
   }
 
-  return { isConnected, isMuted, participants, connect, disconnect, toggleMute };
+  return {
+    isConnected,
+    isMuted,
+    participants,
+    connect,
+    disconnect,
+    toggleMute,
+  };
 }

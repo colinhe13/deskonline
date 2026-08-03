@@ -15,7 +15,11 @@ const MAX_RECONNECT_DELAY = 15_000;
 
 export function useWebSocket() {
   function connect() {
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -23,7 +27,8 @@ export function useWebSocket() {
     if (!token) return;
 
     intentionalClose = false;
-    const base = import.meta.env.VITE_WS_BASE || import.meta.env.VITE_API_BASE || "";
+    const base =
+      import.meta.env.VITE_WS_BASE || import.meta.env.VITE_API_BASE || "";
     const wsUrl = base.replace(/^http/, "ws") + `/ws?token=${token}`;
 
     ws = new WebSocket(wsUrl);
@@ -67,7 +72,10 @@ export function useWebSocket() {
   function scheduleReconnect() {
     if (reconnectTimer || intentionalClose) return;
     isReconnecting.value = true;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+    const delay = Math.min(
+      1000 * Math.pow(2, reconnectAttempts),
+      MAX_RECONNECT_DELAY,
+    );
     reconnectAttempts++;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -106,7 +114,11 @@ export function useWebSocket() {
   }
 
   function handleVisibilityChange() {
-    if (document.visibilityState === "visible" && !intentionalClose && localStorage.getItem("token")) {
+    if (
+      document.visibilityState === "visible" &&
+      !intentionalClose &&
+      localStorage.getItem("token")
+    ) {
       connect();
     }
   }
@@ -116,5 +128,13 @@ export function useWebSocket() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
   }
 
-  return { isConnected, isReconnecting, connect, disconnect, send, onMessage, offMessage };
+  return {
+    isConnected,
+    isReconnecting,
+    connect,
+    disconnect,
+    send,
+    onMessage,
+    offMessage,
+  };
 }
