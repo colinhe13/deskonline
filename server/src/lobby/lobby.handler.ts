@@ -71,6 +71,29 @@ export class LobbyHandler {
     }
   }
 
+  // Chips committed to tables, per user. While an engine runs, its state is
+  // authoritative (chips + open bet); otherwise the seat holds the chips.
+  getTableChipsByUserId(): Map<string, number> {
+    const chips = new Map<string, number>();
+    const add = (userId: string, amount: number) => {
+      if (amount <= 0) return;
+      chips.set(userId, (chips.get(userId) ?? 0) + amount);
+    };
+    for (const room of roomManager.allRooms()) {
+      const engine = this.engines.get(room.id);
+      if (engine) {
+        for (const p of engine.getState().players) {
+          add(p.userId, p.chips + p.bet);
+        }
+      } else {
+        for (const seat of room.seats) {
+          if (seat.userId) add(seat.userId, seat.chips);
+        }
+      }
+    }
+    return chips;
+  }
+
   private handlePokerAction(userId: string, payload: unknown) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;

@@ -43,6 +43,10 @@ export class RoomManager {
   listRooms() {
     return [...this.rooms.values()].map((r) => r.toSummary());
   }
+
+  allRooms(): Room[] {
+    return [...this.rooms.values()];
+  }
 }
 
 export const roomManager = new RoomManager();

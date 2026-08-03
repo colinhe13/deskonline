@@ -149,6 +149,10 @@ export class WebSocketGateway {
     return [...this.clients.keys()];
   }
 
+  getTableChipsByUserId(): Map<string, number> {
+    return this.lobbyHandler.getTableChipsByUserId();
+  }
+
   destroy() {
     clearInterval(this.heartbeatTimer);
     this.wss.close();

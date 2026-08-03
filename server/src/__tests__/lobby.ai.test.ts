@@ -719,4 +719,33 @@ describe("lobby AI lifecycle", () => {
       }
     });
   });
+
+  // ----------------------------------------------------------------
+  // Table chips aggregation (leaderboard support)
+  // ----------------------------------------------------------------
+
+  describe("getTableChipsByUserId", () => {
+    it("reports seat chips while waiting", async () => {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      const aiId = room.aiSeats()[0]!.userId!;
+
+      const chips = handler.getTableChipsByUserId();
+      expect(chips.get("h1")).toBe(room.settings.minBuyIn);
+      expect(chips.get(aiId)).toBe(room.settings.minBuyIn);
+    });
+
+    it("prefers engine state mid-hand and conserves chips + bet", async () => {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      const aiId = room.aiSeats()[0]!.userId!;
+      room.status = "playing";
+      handler["startEngine"](room);
+
+      // Blinds move chips into bets; the per-player total must be conserved.
+      const chips = handler.getTableChipsByUserId();
+      expect(chips.get("h1")).toBe(room.settings.minBuyIn);
+      expect(chips.get(aiId)).toBe(room.settings.minBuyIn);
+    });
+  });
 });

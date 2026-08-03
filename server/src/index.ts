@@ -2,6 +2,7 @@ import express from "express";
 import { createServer } from "http";
 import { config } from "./config.js";
 import { authRouter } from "./auth/auth.router.js";
+import { createLeaderboardRouter } from "./leaderboard/leaderboard.router.js";
 import { WebSocketGateway } from "./ws/gateway.js";
 import { ensureAiAccounts } from "./ai/accounts.js";
 
@@ -16,6 +17,7 @@ app.use("/api/auth", authRouter);
 
 const server = createServer(app);
 const gateway = new WebSocketGateway(server);
+app.use("/api/leaderboard", createLeaderboardRouter(gateway));
 
 // AI pool accounts must exist before any ai:add can be served.
 ensureAiAccounts().catch((err) => {
