@@ -53,6 +53,9 @@ export interface PlayerState {
 export interface SidePot {
   amount: number;
   eligible: string[];
+  // Per-player contributions to this layer; lets settlement refund pots whose
+  // eligible players all folded instead of letting chips vanish.
+  contributions: Record<string, number>;
 }
 
 export interface GameState {

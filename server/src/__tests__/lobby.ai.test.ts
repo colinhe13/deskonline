@@ -69,7 +69,7 @@ import {
 import { callLlm } from "../ai/llm.client.js";
 import { decideAiAction } from "../ai/decision.js";
 import { ensureAiAccounts, resetAiStateForTests } from "../ai/accounts.js";
-import { LobbyHandler } from "../lobby/lobby.handler.js";
+import { LobbyHandler, SETTLEMENT_WINDOW_MS } from "../lobby/lobby.handler.js";
 import { roomManager } from "../lobby/room.manager.js";
 import { Room } from "../lobby/room.js";
 import { PokerEngine } from "../poker/engine.js";
@@ -882,7 +882,7 @@ describe("lobby AI lifecycle", () => {
         expect(room.findSeatByUserId("h1")!.confirmed).toBe(false);
 
         // Settlement window elapses → game pauses for the human rebuy.
-        await vi.advanceTimersByTimeAsync(5001);
+        await vi.advanceTimersByTimeAsync(SETTLEMENT_WINDOW_MS + 1);
         expect(room.status).toBe("waiting");
         expect(room.autoResume).toBe(true);
         const stateMsg = gateway.sent

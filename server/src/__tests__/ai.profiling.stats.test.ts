@@ -33,6 +33,7 @@ describe("buildHandRecord", () => {
     const history = [action("preflop", "u1", "blind", 1)];
     const rec = buildHandRecord(history, {
       winners: [{ userId: "u2", amount: 10 }],
+      refunds: [],
       showdownCards: {
         u1: [{ suit: "hearts", rank: "A" }],
         u2: [{ suit: "clubs", rank: "K" }],

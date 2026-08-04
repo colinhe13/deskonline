@@ -7,14 +7,21 @@ import {
 } from "./types.js";
 import { createDeck, shuffle, deal } from "./deck.js";
 import { evaluateHand, compareHands, describeHand } from "./evaluator.js";
-import { calculateSidePots, isBettingRoundComplete } from "./betting.js";
+import {
+  calculateSidePots,
+  isBettingRoundComplete,
+  returnUncalledBets,
+} from "./betting.js";
 import { getAvailableActions, isValidAction } from "./actions.js";
 
 export interface HandResult {
   winners: { userId: string; amount: number }[];
+  // Uncalled excess returned to bettors; not a win and shown separately.
+  refunds: { userId: string; amount: number }[];
   showdownCards: Record<string, Card[]>;
   handNames: Record<string, string>;
   reason: "fold" | "showdown";
+  displayMs?: number;
 }
 
 export class PokerEngine {
@@ -438,6 +445,7 @@ export class PokerEngine {
       // so the table can see what they were holding.
       const result: HandResult = {
         winners: [{ userId: winner.userId, amount: s.pot }],
+        refunds: [],
         showdownCards: {},
         handNames: {},
         reason: "fold",
@@ -451,6 +459,9 @@ export class PokerEngine {
       return;
     }
 
+    const refunds = returnUncalledBets(s.players);
+    s.pot = s.players.reduce((sum, p) => sum + p.totalBet, 0);
+
     s.sidePots = calculateSidePots(s.players);
     const showdownCards: Record<string, Card[]> = {};
     const winnings: Map<string, number> = new Map();
@@ -460,7 +471,17 @@ export class PokerEngine {
       const eligiblePlayers = activePlayers.filter((p) =>
         pot.eligible.includes(p.userId),
       );
-      if (eligiblePlayers.length === 0) continue;
+      if (eligiblePlayers.length === 0) {
+        // Everyone eligible folded; refund contributors so chips never vanish.
+        for (const p of s.players) {
+          const contributed = pot.contributions[p.userId] ?? 0;
+          if (contributed > 0) {
+            p.chips += contributed;
+            refunds.push({ userId: p.userId, amount: contributed });
+          }
+        }
+        continue;
+      }
 
       let bestResult = null;
       let potWinners: PlayerState[] = [];
@@ -491,9 +512,8 @@ export class PokerEngine {
     }
 
     const handNames: Record<string, string> = {};
-    for (const userId of winnings.keys()) {
-      const ev = evaluated.get(userId);
-      if (ev) handNames[userId] = describeHand(ev);
+    for (const [userId, ev] of evaluated) {
+      handNames[userId] = describeHand(ev);
     }
 
     this.lastHandWinners = new Set(winnings.keys());
@@ -502,6 +522,7 @@ export class PokerEngine {
         userId,
         amount,
       })),
+      refunds,
       showdownCards,
       handNames,
       reason: "showdown",

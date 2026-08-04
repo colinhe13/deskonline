@@ -27,7 +27,7 @@ import {
   validateChatText,
 } from "../ws/protocol.js";
 
-const SETTLEMENT_WINDOW_MS = 5000;
+export const SETTLEMENT_WINDOW_MS = 8000;
 
 export class LobbyHandler {
   private engines: Map<string, PokerEngine> = new Map();
@@ -350,7 +350,10 @@ export class LobbyHandler {
       this.pushSpectatorView(room);
       this.scheduleDisconnectedTurns(room);
     } else if (type === "poker:hand_result") {
-      room.broadcast(this.gateway, "poker:hand_result", payload);
+      room.broadcast(this.gateway, "poker:hand_result", {
+        ...(payload as HandResult),
+        displayMs: SETTLEMENT_WINDOW_MS,
+      });
       const engine = this.engines.get(room.id);
       if (engine) {
         const state = engine.getState();
