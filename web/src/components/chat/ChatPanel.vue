@@ -29,9 +29,7 @@
       <span class="chat-count" :class="{ over: isOverLimit }">
         {{ visibleCount }}/{{ MAX_CHAT_LENGTH }}
       </span>
-      <button class="chat-send" type="submit" :disabled="!canSend">
-        发送
-      </button>
+      <button class="chat-send" type="submit" :disabled="!canSend">发送</button>
     </form>
   </div>
 </template>

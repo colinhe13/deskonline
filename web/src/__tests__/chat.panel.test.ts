@@ -69,7 +69,7 @@ describe("ChatPanel", () => {
     expect(wrapper.find("img").exists()).toBe(false);
     expect(wrapper.find("script").exists()).toBe(false);
     expect(wrapper.html()).toContain("&lt;img");
-    expect(wrapper.text()).toContain('<img src=x onerror=alert(1)>');
+    expect(wrapper.text()).toContain("<img src=x onerror=alert(1)>");
   });
 
   it("emits trimmed text on submit and clears the draft", async () => {

@@ -30,5 +30,12 @@ export const useChatStore = defineStore("chat", () => {
     error.value = "";
   }
 
-  return { messages, error, appendMessage, setError, clearError, clearMessages };
+  return {
+    messages,
+    error,
+    appendMessage,
+    setError,
+    clearError,
+    clearMessages,
+  };
 });
