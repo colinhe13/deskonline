@@ -219,7 +219,17 @@ export class LobbyHandler {
     if (room.pendingLeaveUserIds.includes(userId)) return;
     const engine = this.engines.get(room.id);
     if (!engine) return;
-    engine.revealCards(userId);
+    const revealed = engine.revealCards(userId);
+    if (!revealed) return;
+    try {
+      const handName = engine.getRevealedHandName(userId);
+      if (handName && !isAiUserId(userId)) {
+        profileStore.attachReveal(room.id, userId, handName);
+      }
+    } catch (err) {
+      // Profiling must never disturb the reveal broadcast.
+      console.error("[profiling] reveal collection failed", err);
+    }
   }
 
   // Identity and timestamps are server-generated; the client only supplies the

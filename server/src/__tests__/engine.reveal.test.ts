@@ -208,6 +208,64 @@ describe("AI fold win reveal", () => {
   });
 });
 
+describe("getRevealedHandName", () => {
+  it("returns null before reveal and for unknown players", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.getRevealedHandName("u0")).toBeNull();
+    expect(engine.getRevealedHandName("ghost")).toBeNull();
+  });
+
+  it("returns null for a preflop fold win: the board was never dealt", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.revealCards("u0")).toBe(true);
+    expect(engine.getRevealedHandName("u0")).toBeNull();
+  });
+
+  it("returns the hand name once the board is complete enough", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "call", 2)).toBe(true);
+    expect(engine.handleAction("u1", "call", 2)).toBe(true);
+    expect(engine.handleAction("u2", "check")).toBe(true);
+    expect(engine.getState().phase).toBe("flop");
+    expect(engine.handleAction("u1", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.handleAction("u0", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+    expect(engine.revealCards("u1")).toBe(true);
+    const name = engine.getRevealedHandName("u1");
+    expect(typeof name).toBe("string");
+    expect(name).not.toBe("");
+  });
+
+  it("returns names for showdown participants but not folders", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "allin", 999)).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getRevealedHandName("u0")).not.toBe("");
+    expect(engine.getRevealedHandName("u1")).not.toBe("");
+    expect(engine.getRevealedHandName("u2")).toBeNull();
+  });
+
+  it("returns null again once the next hand resets reveal state", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.revealCards("u0")).toBe(true);
+    expect(engine.nextHand()).toBe(true);
+    expect(engine.getRevealedHandName("u0")).toBeNull();
+  });
+});
+
 describe("spectator view privacy", () => {
   function spectatorCardCounts(engine: PokerEngine): number[] {
     return engine.getStateForSpectator().players.map((p) => p.cards.length);

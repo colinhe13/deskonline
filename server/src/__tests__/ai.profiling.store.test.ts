@@ -105,6 +105,32 @@ describe("ProfileStore", () => {
     expect(store.listProfiles("room1")).toHaveLength(0);
     expect(store.getRecentRecords("room1", "u1")).toHaveLength(0);
   });
+
+  describe("attachReveal", () => {
+    it("writes the hand name into the user's most recent record only", () => {
+      store.recordHand("room1", "u1", "alice", record("u1"));
+      store.recordHand("room1", "u1", "alice", record("u1"));
+      store.attachReveal("room1", "u1", "高牌 A");
+      const records = store.getRecentRecords("room1", "u1");
+      expect(records[1].revealedHandNames).toEqual({ u1: "高牌 A" });
+      expect(records[0].revealedHandNames).toEqual({});
+    });
+
+    it("is a no-op when the user has no records", () => {
+      expect(() => store.attachReveal("room1", "ghost", "一对 K")).not.toThrow();
+      expect(store.getRecentRecords("room1", "ghost")).toHaveLength(0);
+    });
+
+    it("is visible to every observer sharing the same record object", () => {
+      const shared = record("u1");
+      store.recordHand("room1", "u1", "alice", shared);
+      store.recordHand("room1", "u2", "bob", shared);
+      store.attachReveal("room1", "u1", "两对 K 和 9");
+      expect(store.getRecentRecords("room1", "u2")[0].revealedHandNames).toEqual({
+        u1: "两对 K 和 9",
+      });
+    });
+  });
 });
 
 describe("summarizeOpponent", () => {

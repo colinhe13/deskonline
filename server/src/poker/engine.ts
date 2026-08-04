@@ -559,6 +559,20 @@ export class PokerEngine {
     return true;
   }
 
+  // Public hand name for a player whose cards are already revealed; null
+  // otherwise. Feeds opponent profiling without exposing unshown cards.
+  getRevealedHandName(userId: string): string | null {
+    const player = this.state.players.find((p) => p.userId === userId);
+    if (!player || !player.cardsRevealed || player.cards.length === 0) {
+      return null;
+    }
+    const allCards = [...player.cards, ...this.state.communityCards];
+    // A preflop fold win reveals cards before the board is dealt out, so the
+    // hand cannot be evaluated; skip rather than fabricate a name.
+    if (allCards.length < 5) return null;
+    return describeHand(evaluateHand(allCards));
+  }
+
   private broadcastState() {
     for (const p of this.state.players) {
       const view = this.getStateForPlayer(p.userId);

@@ -51,6 +51,16 @@ export class ProfileStore {
     return this.rooms.get(roomId)?.get(userId);
   }
 
+  // A voluntary reveal can only happen while the just-settled hand is on
+  // display, so the user's most recent record is always the right target.
+  // Records are shared by reference across seated players, one object per
+  // hand, so a single write reaches every observer's history.
+  attachReveal(roomId: string, userId: string, handName: string): void {
+    const list = this.recentRecords.get(roomId)?.get(userId);
+    if (!list || list.length === 0) return;
+    list[list.length - 1].revealedHandNames[userId] = handName;
+  }
+
   getRecentRecords(roomId: string, userId: string): HandRecord[] {
     return this.recentRecords.get(roomId)?.get(userId) ?? [];
   }
