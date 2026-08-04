@@ -254,4 +254,65 @@ describe("RoomManager spectator lookup", () => {
     room.addPlayer("u1", "P1");
     expect(manager.findRoomBySpectator("u1")).toBeUndefined();
   });
+
+  it("findRoomByPendingSeatReservation locates a queued spectator", () => {
+    const manager = new RoomManager();
+    const room = manager.getSystemRoom();
+    room.addPendingSeatReservation("s1", "Watcher", 2, 300, "op-1");
+
+    expect(manager.findRoomByPendingSeatReservation("s1")).toBe(room);
+    expect(manager.findRoomByPendingSeatReservation("missing")).toBeUndefined();
+  });
+});
+
+describe("Room pending seat reservations", () => {
+  it("reserves an empty seat without counting the user as an active player", () => {
+    const room = makeRoom(3);
+    room.addPlayer("u1", "P1");
+
+    const reservation = room.addPendingSeatReservation(
+      "u2",
+      "P2",
+      2,
+      500,
+      "op-1",
+    );
+
+    expect(reservation.status).toBe("pending");
+    expect(room.playerCount).toBe(1);
+    expect(room.confirmedCount).toBe(0);
+    expect(room.isSeatReserved(2)).toBe(true);
+    expect(room.toDetail().pendingSeatReservations).toEqual([
+      { userId: "u2", username: "P2", seatIndex: 2, status: "pending" },
+    ]);
+  });
+
+  it("rejects duplicate users and competing seats", () => {
+    const room = makeRoom(3);
+    room.addPendingSeatReservation("u1", "P1", 1, 500, "op-1");
+
+    expect(() =>
+      room.addPendingSeatReservation("u1", "P1", 2, 500, "op-2"),
+    ).toThrow("PENDING_JOIN_EXISTS");
+    expect(() =>
+      room.addPendingSeatReservation("u2", "P2", 1, 500, "op-3"),
+    ).toThrow("SEAT_TAKEN");
+    expect(() =>
+      room.addPendingSeatReservation("u3", "P3", 3, 500, "op-4"),
+    ).toThrow("INVALID_SEAT");
+  });
+
+  it("activates the reserved seat with the held buy-in state", () => {
+    const room = makeRoom(3);
+    room.addPendingSeatReservation("u1", "P1", 2, 500, "op-1");
+
+    const result = room.activatePendingSeatReservation("u1");
+
+    expect(result.seat.index).toBe(2);
+    expect(result.seat.userId).toBe("u1");
+    expect(result.seat.chips).toBe(500);
+    expect(result.seat.confirmed).toBe(true);
+    expect(result.seat.buyInHoldOperationId).toBe("op-1");
+    expect(room.findPendingSeatReservation("u1")).toBeUndefined();
+  });
 });

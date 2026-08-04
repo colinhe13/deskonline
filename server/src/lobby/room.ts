@@ -19,11 +19,23 @@ export interface Seat {
   connected: boolean;
   confirmed: boolean;
   isAi: boolean;
+  buyInHoldOperationId: string | null;
 }
 
 export interface Spectator {
   userId: string;
   username: string;
+}
+
+export interface PendingSeatReservation {
+  userId: string;
+  username: string;
+  seatIndex: number;
+  buyIn: number;
+  operationId: string;
+  status: "pending";
+  connected: boolean;
+  createdAt: number;
 }
 
 export type RoomStatus = "waiting" | "playing";
@@ -41,6 +53,8 @@ export class Room {
   pendingLeaveUserIds: string[] = [];
   // Users watching the table without occupying a seat.
   spectators: Spectator[] = [];
+  // Spectators who have paid for a specific empty seat in the next hand.
+  pendingSeatReservations: PendingSeatReservation[] = [];
   // Seat index of the last dealer, kept across engine rebuilds so the button
   // rotation survives hand-boundary reconstruction.
   dealerSeatIndex: number | null = null;
@@ -57,6 +71,7 @@ export class Room {
       connected: false,
       confirmed: false,
       isAi: false,
+      buyInHoldOperationId: null,
     }));
   }
 
@@ -69,7 +84,16 @@ export class Room {
   }
 
   get isFull(): boolean {
-    return this.playerCount >= this.settings.maxPlayers;
+    return (
+      this.playerCount + this.pendingSeatReservations.length >=
+      this.settings.maxPlayers
+    );
+  }
+
+  isValidSeatIndex(index: number): boolean {
+    return (
+      Number.isInteger(index) && index >= 0 && index < this.settings.maxPlayers
+    );
   }
 
   get connectedUserIds(): string[] {
@@ -125,9 +149,123 @@ export class Room {
     return this.spectators.some((sp) => sp.userId === userId);
   }
 
+  findPendingSeatReservation(
+    userId: string,
+  ): PendingSeatReservation | undefined {
+    return this.pendingSeatReservations.find((p) => p.userId === userId);
+  }
+
+  findPendingSeatReservationByOperationId(
+    operationId: string,
+  ): PendingSeatReservation | undefined {
+    return this.pendingSeatReservations.find(
+      (p) => p.operationId === operationId,
+    );
+  }
+
+  isSeatReserved(index: number): boolean {
+    return this.pendingSeatReservations.some((p) => p.seatIndex === index);
+  }
+
+  addPendingSeatReservation(
+    userId: string,
+    username: string,
+    seatIndex: number,
+    buyIn: number,
+    operationId: string,
+  ): PendingSeatReservation {
+    if (!this.isValidSeatIndex(seatIndex)) throw new Error("INVALID_SEAT");
+    if (
+      !Number.isInteger(buyIn) ||
+      buyIn < this.settings.minBuyIn ||
+      buyIn > this.settings.maxBuyIn
+    ) {
+      throw new Error("INVALID_BUYIN");
+    }
+    if (this.findPendingSeatReservation(userId)) {
+      throw new Error("PENDING_JOIN_EXISTS");
+    }
+    if (this.isSeatReserved(seatIndex)) throw new Error("SEAT_TAKEN");
+    if (this.seats[seatIndex].userId !== null) {
+      throw new Error("SEAT_TAKEN");
+    }
+
+    const reservation: PendingSeatReservation = {
+      userId,
+      username,
+      seatIndex,
+      buyIn,
+      operationId,
+      status: "pending",
+      connected: true,
+      createdAt: Date.now(),
+    };
+    this.pendingSeatReservations.push(reservation);
+    return reservation;
+  }
+
+  removePendingSeatReservation(
+    userId: string,
+  ): PendingSeatReservation | undefined {
+    const reservation = this.findPendingSeatReservation(userId);
+    if (!reservation) return undefined;
+    this.pendingSeatReservations = this.pendingSeatReservations.filter(
+      (p) => p.userId !== userId,
+    );
+    return reservation;
+  }
+
+  markPendingDisconnected(userId: string) {
+    const reservation = this.findPendingSeatReservation(userId);
+    if (reservation) reservation.connected = false;
+  }
+
+  markPendingReconnected(userId: string) {
+    const reservation = this.findPendingSeatReservation(userId);
+    if (reservation) reservation.connected = true;
+  }
+
+  activatePendingSeatReservation(userId: string): {
+    reservation: PendingSeatReservation;
+    seat: Seat;
+  } {
+    const reservation = this.findPendingSeatReservation(userId);
+    if (!reservation) throw new Error("PENDING_JOIN_NOT_FOUND");
+    if (!this.isValidSeatIndex(reservation.seatIndex)) {
+      throw new Error("INVALID_SEAT");
+    }
+
+    const seat = this.seats[reservation.seatIndex];
+    if (seat.userId !== null) throw new Error("SEAT_TAKEN");
+
+    this.pendingSeatReservations = this.pendingSeatReservations.filter(
+      (p) => p.userId !== userId,
+    );
+    this.assignPlayerToSeat(seat, userId, reservation.username, false);
+    seat.chips = reservation.buyIn;
+    seat.buyIn = reservation.buyIn;
+    seat.confirmed = true;
+    seat.connected = reservation.connected;
+    seat.buyInHoldOperationId = reservation.operationId;
+    return { reservation, seat };
+  }
+
   addPlayer(userId: string, username: string, isAi = false): Seat {
     if (this.isFull) throw new Error("ROOM_FULL");
-    const seat = this.seats.find((s) => s.userId === null)!;
+    const seat = this.seats.find(
+      (s) => s.userId === null && !this.isSeatReserved(s.index),
+    );
+    if (!seat) throw new Error("ROOM_FULL");
+    this.assignPlayerToSeat(seat, userId, username, isAi);
+    return seat;
+  }
+
+  private assignPlayerToSeat(
+    seat: Seat,
+    userId: string,
+    username: string,
+    isAi: boolean,
+  ) {
     seat.userId = userId;
     seat.username = username;
     seat.chips = 0;
@@ -135,11 +273,11 @@ export class Room {
     seat.connected = true;
     seat.confirmed = false;
     seat.isAi = isAi;
+    seat.buyInHoldOperationId = null;
     this.entryOrder.push(userId);
     if (this.hostId === null) {
       this.hostId = userId;
     }
-    return seat;
   }
 
   removePlayer(userId: string): number {
@@ -153,6 +291,7 @@ export class Room {
     seat.connected = false;
     seat.confirmed = false;
     seat.isAi = false;
+    seat.buyInHoldOperationId = null;
     this.entryOrder = this.entryOrder.filter((id) => id !== userId);
     if (this.hostId === userId) {
       this.hostId = this.entryOrder[0] ?? null;
@@ -166,12 +305,20 @@ export class Room {
     seat.buyIn = amount;
     seat.chips = amount;
     seat.confirmed = true;
+    seat.buyInHoldOperationId = null;
   }
 
   moveSeat(userId: string, targetIndex: number): boolean {
     const from = this.findSeatByUserId(userId);
     const to = this.seats[targetIndex];
-    if (!from || !to || to.userId !== null || targetIndex === from.index)
+    if (
+      !from ||
+      !this.isValidSeatIndex(targetIndex) ||
+      !to ||
+      to.userId !== null ||
+      this.isSeatReserved(targetIndex) ||
+      targetIndex === from.index
+    )
       return false;
 
     to.userId = from.userId;
@@ -181,6 +328,7 @@ export class Room {
     to.confirmed = from.confirmed;
     to.connected = from.connected;
     to.isAi = from.isAi;
+    to.buyInHoldOperationId = from.buyInHoldOperationId;
 
     from.userId = null;
     from.username = null;
@@ -189,6 +337,7 @@ export class Room {
     from.confirmed = false;
     from.connected = false;
     from.isAi = false;
+    from.buyInHoldOperationId = null;
     return true;
   }
 
@@ -201,6 +350,7 @@ export class Room {
         seat.confirmed = false;
         seat.chips = 0;
         seat.buyIn = 0;
+        seat.buyInHoldOperationId = null;
       }
     }
     return refunds;
@@ -240,6 +390,7 @@ export class Room {
       maxBuyIn: this.settings.maxBuyIn,
       status: this.status,
       autoResume: this.autoResume,
+      pendingSeatReservationCount: this.pendingSeatReservations.length,
     };
   }
 
@@ -259,6 +410,12 @@ export class Room {
       spectators: this.spectators.map((sp) => ({
         userId: sp.userId,
         username: sp.username,
+      })),
+      pendingSeatReservations: this.pendingSeatReservations.map((p) => ({
+        userId: p.userId,
+        username: p.username,
+        seatIndex: p.seatIndex,
+        status: p.status,
       })),
     };
   }

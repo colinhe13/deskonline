@@ -65,7 +65,11 @@ export class WebSocketGateway {
     ws.on("message", (data) => {
       const msg = parseClientMessage(data.toString());
       if (msg) {
-        this.handleMessage(user.userId, msg.type, msg.payload);
+        void this.handleMessage(user.userId, msg.type, msg.payload).catch(
+          (err) => {
+            console.error("[ws] message handling failed", err);
+          },
+        );
       }
     });
 
@@ -85,11 +89,15 @@ export class WebSocketGateway {
     this.lobbyHandler.sendRoomListToUser(user.userId);
   }
 
-  private handleMessage(userId: string, type: string, payload: unknown) {
+  private async handleMessage(
+    userId: string,
+    type: string,
+    payload: unknown,
+  ): Promise<void> {
     const client = this.clients.get(userId);
     if (!client) return;
     if (shouldRouteToLobby(type)) {
-      this.lobbyHandler.handleMessage(
+      await this.lobbyHandler.handleMessage(
         userId,
         client.user.username,
         type,

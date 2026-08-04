@@ -40,6 +40,13 @@ export class RoomManager {
     return undefined;
   }
 
+  findRoomByPendingSeatReservation(userId: string): Room | undefined {
+    for (const room of this.rooms.values()) {
+      if (room.findPendingSeatReservation(userId)) return room;
+    }
+    return undefined;
+  }
+
   listRooms() {
     return [...this.rooms.values()].map((r) => r.toSummary());
   }

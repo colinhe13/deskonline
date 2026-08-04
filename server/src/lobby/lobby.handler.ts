@@ -1,6 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { WebSocketGateway } from "../ws/gateway.js";
 import { roomManager } from "./room.manager.js";
-import { deductPoints, addPoints } from "../points/points.service.js";
+import {
+  activateBuyInHold,
+  addPoints,
+  createBuyInHold,
+  deductPoints,
+  refundBuyInHold,
+  settleBuyInHold,
+  updateBuyInHoldAmount,
+} from "../points/points.service.js";
 import { PokerEngine } from "../poker/engine.js";
 import { Room } from "./room.js";
 import { livekitService } from "../voice/livekit.service.js";
@@ -17,8 +26,53 @@ export class LobbyHandler {
   private aiPending: Map<string, string> = new Map();
   // Bumped whenever a room's engine is replaced, invalidating stale timers.
   private engineGeneration: Map<string, number> = new Map();
+  // Commands that can race with hand settlement are serialized per room.
+  private roomCommandQueues: Map<string, Promise<void>> = new Map();
+  // Pending reservations keep their spectator slot for the same 60s window as
+  // seated players. The timer is transferred to the seat if activation happens
+  // while the user is disconnected.
+  private pendingDisconnectTimers: Map<string, ReturnType<typeof setTimeout>> =
+    new Map();
 
   constructor(private gateway: WebSocketGateway) {}
+
+  private getRoomIdFromPayload(payload: unknown): string {
+    const roomId = (payload as { roomId?: unknown } | null)?.roomId;
+    return typeof roomId === "string" && roomId.length > 0 ? roomId : "main";
+  }
+
+  private findRoomForUser(userId: string): Room | undefined {
+    return (
+      roomManager.findRoomByPlayer(userId) ??
+      roomManager.findRoomByPendingSeatReservation(userId) ??
+      roomManager.findRoomBySpectator(userId)
+    );
+  }
+
+  private async withRoomCommandLock<T>(
+    roomId: string,
+    command: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.roomCommandQueues.get(roomId);
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = (previous ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => current);
+    this.roomCommandQueues.set(roomId, tail);
+
+    if (previous) await previous.catch(() => undefined);
+    try {
+      return await command();
+    } finally {
+      release();
+      if (this.roomCommandQueues.get(roomId) === tail) {
+        this.roomCommandQueues.delete(roomId);
+      }
+    }
+  }
 
   async handleMessage(
     userId: string,
@@ -33,8 +87,22 @@ export class LobbyHandler {
       case "room:confirm":
         await this.handleConfirmBuyIn(userId, payload);
         break;
+      case "room:queue-join":
+        await this.withRoomCommandLock(this.getRoomIdFromPayload(payload), () =>
+          this.handleQueueJoin(userId, username, payload),
+        );
+        break;
+      case "room:cancel-queue-join":
+        await this.withRoomCommandLock(
+          this.findRoomForUser(userId)?.id ?? "main",
+          () => this.handleCancelQueueJoin(userId),
+        );
+        break;
       case "room:leave":
-        await this.handleLeaveRoom(userId);
+        await this.withRoomCommandLock(
+          this.findRoomForUser(userId)?.id ?? "main",
+          () => this.handleLeaveRoom(userId),
+        );
         break;
       case "room:update-settings":
         await this.handleUpdateSettings(userId, payload);
@@ -89,6 +157,9 @@ export class LobbyHandler {
         for (const seat of room.seats) {
           if (seat.userId) add(seat.userId, seat.chips);
         }
+      }
+      for (const reservation of room.pendingSeatReservations) {
+        add(reservation.userId, reservation.buyIn);
       }
     }
     return chips;
@@ -351,13 +422,135 @@ export class LobbyHandler {
     room.pendingLeaveUserIds = [];
   }
 
+  private async settleActiveHolds(room: Room) {
+    for (const seat of room.seats) {
+      if (!seat.userId || !seat.buyInHoldOperationId) continue;
+
+      if (seat.confirmed && seat.chips > 0) {
+        const updated = await updateBuyInHoldAmount(
+          seat.buyInHoldOperationId,
+          seat.chips,
+        );
+        if (!updated) throw new Error("HOLD_UPDATE_FAILED");
+      } else {
+        const settled = await settleBuyInHold(
+          seat.buyInHoldOperationId,
+          seat.chips,
+        );
+        if (!settled) throw new Error("HOLD_SETTLEMENT_FAILED");
+        seat.buyInHoldOperationId = null;
+      }
+    }
+  }
+
+  private async activatePendingReservations(room: Room) {
+    for (const reservation of [...room.pendingSeatReservations]) {
+      const target = room.seats[reservation.seatIndex];
+      const targetUnavailable = !target || target.userId !== null;
+      if (targetUnavailable) {
+        const cancelled = await this.cancelPendingReservation(
+          room,
+          reservation.userId,
+        );
+        if (!cancelled) {
+          console.error(
+            `[lobby] failed to refund unavailable reservation ${reservation.operationId}`,
+          );
+          continue;
+        }
+        this.sendQueueError(
+          reservation.userId,
+          "SEAT_UNAVAILABLE",
+          "预约座位已不可用，带入积分已返还",
+        );
+        continue;
+      }
+
+      try {
+        const activated = await activateBuyInHold(reservation.operationId);
+        if (!activated) throw new Error("HOLD_NOT_FOUND");
+
+        const { seat } = room.activatePendingSeatReservation(
+          reservation.userId,
+        );
+        room.removeSpectator(reservation.userId);
+        if (seat.connected) {
+          this.clearPendingDisconnectTimer(reservation.userId);
+          this.sendVoiceToken(
+            reservation.userId,
+            reservation.username,
+            room.id,
+          );
+        }
+        this.gateway.sendToUser(
+          reservation.userId,
+          "room:queue-join:activated",
+          { roomId: room.id, seatIndex: seat.index },
+        );
+      } catch {
+        await refundBuyInHold(reservation.operationId);
+        room.removePendingSeatReservation(reservation.userId);
+        room.removeSpectator(reservation.userId);
+        this.clearPendingDisconnectTimer(reservation.userId);
+        this.sendQueueError(
+          reservation.userId,
+          "QUEUE_JOIN_FAILED",
+          "预约未能激活，带入积分已返还",
+        );
+      }
+    }
+  }
+
+  private async cancelPendingReservation(room: Room, userId: string) {
+    const reservation = room.findPendingSeatReservation(userId);
+    if (!reservation) return false;
+    const refunded = await refundBuyInHold(reservation.operationId);
+    if (!refunded) return false;
+    room.removePendingSeatReservation(userId);
+    this.clearPendingDisconnectTimer(userId);
+    return true;
+  }
+
+  private async cancelAllPendingReservations(room: Room) {
+    for (const reservation of [...room.pendingSeatReservations]) {
+      const cancelled = await this.cancelPendingReservation(
+        room,
+        reservation.userId,
+      );
+      if (!cancelled) {
+        console.error(
+          `[lobby] failed to refund pending reservation ${reservation.operationId}`,
+        );
+        continue;
+      }
+      room.removeSpectator(reservation.userId);
+      this.sendQueueError(
+        reservation.userId,
+        "QUEUE_CANCELLED",
+        "牌局已结束，预约已取消，带入积分已返还",
+      );
+    }
+  }
+
   private async handleHandEnd(room: Room, gen: number) {
+    return this.withRoomCommandLock(room.id, () =>
+      this.handleHandEndUnsafe(room, gen),
+    );
+  }
+
+  private async handleHandEndUnsafe(room: Room, gen: number) {
     if (this.engineGeneration.get(room.id) !== gen) return;
     const engine = this.engines.get(room.id);
     if (!engine || room.status !== "playing") return;
 
     this.destroyEngine(room);
     await this.settleSeatChanges(room);
+    if (room.seats.some((seat) => seat.buyInHoldOperationId)) {
+      await this.settleActiveHolds(room);
+    }
+    if (room.pendingSeatReservations.length > 0) {
+      await this.activatePendingReservations(room);
+    }
 
     if (!room.hasHuman()) {
       await this.removeAllAi(room);
@@ -435,7 +628,25 @@ export class LobbyHandler {
         );
         return;
       }
+      if (spectatingRoom.findPendingSeatReservation(userId)) {
+        const cancelled = await this.cancelPendingReservation(
+          spectatingRoom,
+          userId,
+        );
+        if (!cancelled) {
+          this.sendQueueError(
+            userId,
+            "REFUND_FAILED",
+            "预约退款失败，请稍后重试",
+          );
+          return;
+        }
+      }
       spectatingRoom.removeSpectator(userId);
+      this.broadcastLobbyList();
+      spectatingRoom.broadcast(this.gateway, "room:state", {
+        room: spectatingRoom.toDetail(),
+      });
     }
 
     const room = roomManager.getRoom(targetRoomId);
@@ -468,6 +679,13 @@ export class LobbyHandler {
     room: Room,
     seatIndex?: number,
   ) {
+    if (room.findPendingSeatReservation(userId)) {
+      this.gateway.sendToUser(userId, "room:state", {
+        room: room.toDetail(),
+      });
+      this.sendSpectatorSnapshot(userId, room);
+      return;
+    }
     if (room.status !== "waiting" || room.isFull) {
       this.gateway.sendToUser(userId, "room:state", {
         room: room.toDetail(),
@@ -518,6 +736,222 @@ export class LobbyHandler {
     );
   }
 
+  private async handleQueueJoin(
+    userId: string,
+    username: string,
+    payload: unknown,
+  ): Promise<void> {
+    const p =
+      (payload as {
+        roomId?: unknown;
+        seatIndex?: unknown;
+        buyIn?: unknown;
+      } | null) ?? {};
+    const roomId = this.getRoomIdFromPayload(payload);
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      this.sendQueueError(userId, "ROOM_NOT_FOUND", "房间不存在");
+      return;
+    }
+
+    if (roomManager.findRoomBySpectator(userId) !== room) {
+      this.sendQueueError(userId, "NOT_SPECTATOR", "请先进入房间观战");
+      return;
+    }
+    if (room.status !== "playing" || !this.engines.has(room.id)) {
+      this.sendQueueError(
+        userId,
+        "GAME_NOT_IN_PROGRESS",
+        "当前没有进行中的牌局",
+      );
+      return;
+    }
+    if (
+      typeof p.seatIndex !== "number" ||
+      !room.isValidSeatIndex(p.seatIndex)
+    ) {
+      this.sendQueueError(userId, "INVALID_SEAT", "座位号无效");
+      return;
+    }
+    if (room.findPendingSeatReservation(userId)) {
+      this.sendQueueError(
+        userId,
+        "PENDING_JOIN_EXISTS",
+        "你已经预约了一个座位",
+      );
+      return;
+    }
+    if (
+      room.isSeatReserved(p.seatIndex) ||
+      room.seats[p.seatIndex].userId !== null
+    ) {
+      this.sendQueueError(userId, "SEAT_TAKEN", "该座位已被占用");
+      return;
+    }
+    if (
+      typeof p.buyIn !== "number" ||
+      !Number.isInteger(p.buyIn) ||
+      p.buyIn < room.settings.minBuyIn ||
+      p.buyIn > room.settings.maxBuyIn
+    ) {
+      this.sendQueueError(
+        userId,
+        "INVALID_BUYIN",
+        `带入金额需在 ${room.settings.minBuyIn} - ${room.settings.maxBuyIn} 之间`,
+      );
+      return;
+    }
+
+    // The operation ID is only an idempotency key. Keep user and room data out
+    // of it so UUID-based identities stay within the database column limit.
+    const operationId = `midhand:${randomUUID()}`;
+    try {
+      await createBuyInHold({
+        operationId,
+        roomId: room.id,
+        userId,
+        seatIndex: p.seatIndex,
+        amount: p.buyIn,
+      });
+    } catch (err) {
+      const code = err instanceof Error ? err.message : "";
+      if (code !== "INSUFFICIENT_POINTS") {
+        console.error("[lobby] createBuyInHold failed", err);
+      }
+      this.sendQueueError(
+        userId,
+        code === "INSUFFICIENT_POINTS"
+          ? "INSUFFICIENT_POINTS"
+          : "QUEUE_JOIN_FAILED",
+        code === "INSUFFICIENT_POINTS" ? "积分不足" : "预约入桌失败",
+      );
+      return;
+    }
+
+    try {
+      room.addPendingSeatReservation(
+        userId,
+        username,
+        p.seatIndex,
+        p.buyIn,
+        operationId,
+      );
+    } catch (err) {
+      let refunded = false;
+      try {
+        refunded = await refundBuyInHold(operationId);
+      } catch (refundError) {
+        console.error(
+          "[lobby] rejected reservation refund failed",
+          refundError,
+        );
+      }
+      if (!refunded) {
+        console.error(
+          `[lobby] failed to refund rejected reservation ${operationId}`,
+        );
+      }
+      const code = err instanceof Error ? err.message : "";
+      this.sendQueueError(
+        userId,
+        code === "PENDING_JOIN_EXISTS" ? code : "SEAT_TAKEN",
+        code === "PENDING_JOIN_EXISTS"
+          ? "你已经预约了一个座位"
+          : "该座位已被占用",
+      );
+      return;
+    }
+
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.broadcastLobbyList();
+    this.gateway.sendToUser(userId, "room:queue-join:accepted", {
+      roomId: room.id,
+      seatIndex: p.seatIndex,
+    });
+  }
+
+  private async handleCancelQueueJoin(userId: string): Promise<void> {
+    const room = roomManager.findRoomByPendingSeatReservation(userId);
+    if (!room) {
+      this.sendQueueError(
+        userId,
+        "PENDING_JOIN_NOT_FOUND",
+        "没有待激活的座位预约",
+      );
+      return;
+    }
+    const reservation = room.findPendingSeatReservation(userId);
+    if (!reservation) return;
+
+    try {
+      const refunded = await refundBuyInHold(reservation.operationId);
+      if (!refunded) {
+        this.sendQueueError(
+          userId,
+          "REFUND_FAILED",
+          "预约退款失败，请稍后重试",
+        );
+        return;
+      }
+    } catch {
+      this.sendQueueError(userId, "REFUND_FAILED", "预约退款失败，请稍后重试");
+      return;
+    }
+
+    this.clearPendingDisconnectTimer(userId);
+    room.removePendingSeatReservation(userId);
+    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.broadcastLobbyList();
+    this.gateway.sendToUser(userId, "room:queue-join:cancelled", {
+      roomId: room.id,
+    });
+  }
+
+  private sendQueueError(userId: string, code: string, message: string) {
+    this.gateway.sendToUser(userId, "room:error", { code, message });
+  }
+
+  private clearPendingDisconnectTimer(userId: string) {
+    const timer = this.pendingDisconnectTimers.get(userId);
+    if (timer) clearTimeout(timer);
+    this.pendingDisconnectTimers.delete(userId);
+  }
+
+  private schedulePendingDisconnect(room: Room, userId: string) {
+    this.clearPendingDisconnectTimer(userId);
+    const timer = setTimeout(() => {
+      this.pendingDisconnectTimers.delete(userId);
+      void this.withRoomCommandLock(room.id, async () => {
+        const currentRoom = this.findRoomForUser(userId);
+        if (!currentRoom) return;
+
+        const reservation = currentRoom.findPendingSeatReservation(userId);
+        if (reservation && !reservation.connected) {
+          const cancelled = await this.cancelPendingReservation(
+            currentRoom,
+            userId,
+          );
+          if (cancelled) {
+            currentRoom.removeSpectator(userId);
+            currentRoom.broadcast(this.gateway, "room:state", {
+              room: currentRoom.toDetail(),
+            });
+            this.broadcastLobbyList();
+          }
+          return;
+        }
+
+        const seat = currentRoom.findSeatByUserId(userId);
+        if (seat && !seat.connected) {
+          await this.ejectPlayer(currentRoom, userId);
+        }
+      }).catch((err) => {
+        console.error("[lobby] pending disconnect cleanup failed", err);
+      });
+    }, 60_000);
+    this.pendingDisconnectTimers.set(userId, timer);
+  }
+
   private async handleConfirmBuyIn(userId: string, payload: unknown) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
@@ -535,7 +969,11 @@ export class LobbyHandler {
 
     const p = payload as { buyIn?: number };
     const buyIn = p?.buyIn ?? 0;
-    if (buyIn < room.settings.minBuyIn || buyIn > room.settings.maxBuyIn) {
+    if (
+      !Number.isInteger(buyIn) ||
+      buyIn < room.settings.minBuyIn ||
+      buyIn > room.settings.maxBuyIn
+    ) {
       this.gateway.sendToUser(userId, "room:error", {
         code: "INVALID_BUYIN",
         message: `带入金额需在 ${room.settings.minBuyIn} - ${room.settings.maxBuyIn} 之间`,
@@ -544,6 +982,14 @@ export class LobbyHandler {
     }
 
     try {
+      if (seat.buyInHoldOperationId) {
+        const settled = await settleBuyInHold(
+          seat.buyInHoldOperationId,
+          seat.chips,
+        );
+        if (!settled) throw new Error("HOLD_SETTLEMENT_FAILED");
+        seat.buyInHoldOperationId = null;
+      }
       if (seat.confirmed) {
         // Adjust already-committed chips to the new buy-in.
         const net = buyIn - seat.chips;
@@ -612,7 +1058,11 @@ export class LobbyHandler {
     const minBuyIn = p.minBuyIn ?? room.settings.minBuyIn;
     const maxBuyIn = p.maxBuyIn ?? room.settings.maxBuyIn;
 
-    if (maxPlayers < 2 || maxPlayers > 9 || maxPlayers < room.playerCount) {
+    if (
+      maxPlayers < 2 ||
+      maxPlayers > 9 ||
+      maxPlayers < room.playerCount + room.pendingSeatReservations.length
+    ) {
       this.gateway.sendToUser(userId, "room:error", {
         code: "INVALID_SETTINGS",
         message: "人数设置无效",
@@ -635,10 +1085,20 @@ export class LobbyHandler {
     }
 
     // Changing settings voids every player's committed buy-in; refund them.
-    const refunds = room.clearConfirmations();
+    const activeHoldByUser = new Map(
+      room.seats
+        .filter((seat) => seat.userId && seat.buyInHoldOperationId)
+        .map((seat) => [seat.userId!, seat.buyInHoldOperationId!] as const),
+    );
+    const refunds = room.seats
+      .filter((seat) => seat.userId && seat.confirmed)
+      .map((seat) => ({ userId: seat.userId!, chips: seat.chips }));
     for (const r of refunds) {
-      await addPoints(r.userId, r.chips);
+      const holdOperationId = activeHoldByUser.get(r.userId);
+      if (holdOperationId) await settleBuyInHold(holdOperationId, r.chips);
+      else await addPoints(r.userId, r.chips);
     }
+    room.clearConfirmations();
 
     room.settings = { maxPlayers, smallBlind, bigBlind, minBuyIn, maxBuyIn };
 
@@ -746,6 +1206,28 @@ export class LobbyHandler {
   }
 
   private async handleLeaveRoom(userId: string) {
+    const pendingRoom = roomManager.findRoomByPendingSeatReservation(userId);
+    if (pendingRoom) {
+      const cancelled = await this.cancelPendingReservation(
+        pendingRoom,
+        userId,
+      );
+      if (!cancelled) {
+        this.sendQueueError(
+          userId,
+          "REFUND_FAILED",
+          "预约退款失败，请稍后重试",
+        );
+        return;
+      }
+      pendingRoom.removeSpectator(userId);
+      this.broadcastLobbyList();
+      pendingRoom.broadcast(this.gateway, "room:state", {
+        room: pendingRoom.toDetail(),
+      });
+      return;
+    }
+
     const spectatingRoom = roomManager.findRoomBySpectator(userId);
     if (spectatingRoom) {
       spectatingRoom.removeSpectator(userId);
@@ -776,12 +1258,22 @@ export class LobbyHandler {
       this.voidHandToSeats(room, engine);
     }
 
-    const chips = room.removePlayer(userId);
-    await addPoints(userId, chips);
+    const seat = room.findSeatByUserId(userId);
+    const holdOperationId = seat?.buyInHoldOperationId;
+    const chips = seat?.chips ?? 0;
+    if (holdOperationId) {
+      const settled = await settleBuyInHold(holdOperationId, chips);
+      if (!settled) throw new Error("HOLD_SETTLEMENT_FAILED");
+    }
+    const removedChips = room.removePlayer(userId);
+    if (!holdOperationId) await addPoints(userId, removedChips);
 
     if (engine && wasInHand) {
       this.destroyEngine(room);
       await this.settleSeatChanges(room);
+      await this.settleActiveHolds(room);
+      if (handSettled) await this.activatePendingReservations(room);
+      else await this.cancelAllPendingReservations(room);
 
       if (!room.hasHuman()) {
         await this.removeAllAi(room);
@@ -820,6 +1312,16 @@ export class LobbyHandler {
   }
 
   handleDisconnect(userId: string) {
+    const pendingRoom = roomManager.findRoomByPendingSeatReservation(userId);
+    if (pendingRoom) {
+      pendingRoom.markPendingDisconnected(userId);
+      this.schedulePendingDisconnect(pendingRoom, userId);
+      pendingRoom.broadcast(this.gateway, "room:state", {
+        room: pendingRoom.toDetail(),
+      });
+      return;
+    }
+
     const spectatingRoom = roomManager.findRoomBySpectator(userId);
     if (spectatingRoom) {
       spectatingRoom.removeSpectator(userId);
@@ -955,6 +1457,7 @@ export class LobbyHandler {
   private handleReconnect(userId: string, username: string) {
     const room = roomManager.findRoomByPlayer(userId);
     if (room) {
+      this.clearPendingDisconnectTimer(userId);
       room.markReconnected(userId);
       room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
 
@@ -975,6 +1478,10 @@ export class LobbyHandler {
 
     const spectatingRoom = roomManager.findRoomBySpectator(userId);
     if (spectatingRoom) {
+      if (spectatingRoom.findPendingSeatReservation(userId)) {
+        this.clearPendingDisconnectTimer(userId);
+        spectatingRoom.markPendingReconnected(userId);
+      }
       spectatingRoom.broadcast(this.gateway, "room:state", {
         room: spectatingRoom.toDetail(),
       });

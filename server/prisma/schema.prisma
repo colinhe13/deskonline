@@ -16,5 +16,25 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  buyInHolds BuyInHold[]
+
   @@map("users")
+}
+
+model BuyInHold {
+  id          String   @id @default(uuid())
+  operationId String   @unique @map("operation_id") @db.VarChar(64)
+  roomId      String   @map("room_id") @db.VarChar(32)
+  userId      String   @map("user_id")
+  seatIndex   Int      @map("seat_index")
+  amount      Int
+  status      String   @default("pending") @db.VarChar(16)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([roomId, status])
+  @@index([userId, status])
+  @@map("buy_in_holds")
 }

@@ -40,6 +40,8 @@ describe("protocol", () => {
   describe("shouldRouteToLobby (gateway 路由总闸)", () => {
     it("routes room:* and poker:* messages", () => {
       expect(shouldRouteToLobby("room:join")).toBe(true);
+      expect(shouldRouteToLobby("room:queue-join")).toBe(true);
+      expect(shouldRouteToLobby("room:cancel-queue-join")).toBe(true);
       expect(shouldRouteToLobby("room:list:request")).toBe(true);
       expect(shouldRouteToLobby("poker:action")).toBe(true);
       expect(shouldRouteToLobby("poker:reveal")).toBe(true);
