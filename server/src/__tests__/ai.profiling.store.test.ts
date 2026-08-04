@@ -117,7 +117,9 @@ describe("ProfileStore", () => {
     });
 
     it("is a no-op when the user has no records", () => {
-      expect(() => store.attachReveal("room1", "ghost", "一对 K")).not.toThrow();
+      expect(() =>
+        store.attachReveal("room1", "ghost", "一对 K"),
+      ).not.toThrow();
       expect(store.getRecentRecords("room1", "ghost")).toHaveLength(0);
     });
 
@@ -126,7 +128,9 @@ describe("ProfileStore", () => {
       store.recordHand("room1", "u1", "alice", shared);
       store.recordHand("room1", "u2", "bob", shared);
       store.attachReveal("room1", "u1", "两对 K 和 9");
-      expect(store.getRecentRecords("room1", "u2")[0].revealedHandNames).toEqual({
+      expect(
+        store.getRecentRecords("room1", "u2")[0].revealedHandNames,
+      ).toEqual({
         u1: "两对 K 和 9",
       });
     });
@@ -205,11 +209,7 @@ describe("summarizeOpponent", () => {
     const unrevealed = record("u1");
     unrevealed.winners = [{ userId: "u2", amount: 6 }];
 
-    await summarizeOpponent(profile, [
-      foldWinReveal,
-      showdownLoss,
-      unrevealed,
-    ]);
+    await summarizeOpponent(profile, [foldWinReveal, showdownLoss, unrevealed]);
     const userContent = mockedCallLlm.mock.calls[0][1];
     expect(userContent).toContain("won 6，亮牌：高牌 A");
     expect(userContent).toContain("showdown lost，亮牌：两对 K 和 9");
