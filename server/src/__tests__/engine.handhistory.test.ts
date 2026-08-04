@@ -117,4 +117,37 @@ describe("PokerEngine.getHandHistory", () => {
     expect(serialized).not.toMatch(/[2-9TJQKA][hdcs]\b/);
     expect(serialized).not.toContain("cards");
   });
+
+  function shortStackEngine(chips: number) {
+    const players = [
+      { userId: "u1", username: "alice", seatIndex: 0, chips },
+      { userId: "u2", username: "bob", seatIndex: 1, chips: 200 },
+      { userId: "u3", username: "carol", seatIndex: 2, chips: 200 },
+    ];
+    return new PokerEngine(players, 1, 2, 0, vi.fn());
+  }
+
+  it("records a shove that only matches the current bet as an effective call", () => {
+    const engine = shortStackEngine(2);
+    engine.startHand();
+    expect(engine.handleAction("u1", "allin", 2)).toBe(true);
+    expect(engine.getHandHistory()).toContainEqual({
+      street: "preflop",
+      userId: "u1",
+      action: "call",
+      amount: 2,
+    });
+  });
+
+  it("records a shove above the current bet as allin", () => {
+    const engine = shortStackEngine(10);
+    engine.startHand();
+    expect(engine.handleAction("u1", "allin", 10)).toBe(true);
+    expect(engine.getHandHistory()).toContainEqual({
+      street: "preflop",
+      userId: "u1",
+      action: "allin",
+      amount: 10,
+    });
+  });
 });

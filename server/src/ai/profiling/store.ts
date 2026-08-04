@@ -75,6 +75,26 @@ export class ProfileStore {
     this.rooms.delete(roomId);
     this.recentRecords.delete(roomId);
   }
+
+  // Drop profiles of users who are no longer seated nor queue-reserved, so a
+  // long-running table does not accumulate (and broadcast) stale entries.
+  pruneTo(roomId: string, keepUserIds: Set<string>): void {
+    const profiles = this.rooms.get(roomId);
+    if (!profiles) return;
+    for (const userId of profiles.keys()) {
+      if (!keepUserIds.has(userId)) profiles.delete(userId);
+    }
+    if (profiles.size === 0) {
+      this.clearRoom(roomId);
+      return;
+    }
+    const recordsByUser = this.recentRecords.get(roomId);
+    if (recordsByUser) {
+      for (const userId of recordsByUser.keys()) {
+        if (!keepUserIds.has(userId)) recordsByUser.delete(userId);
+      }
+    }
+  }
 }
 
 export function toView(profile: OpponentProfile): ProfileView {

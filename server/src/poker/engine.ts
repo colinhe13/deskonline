@@ -274,7 +274,13 @@ export class PokerEngine {
       s.actionLog.push(`${player.username} raise ${putIn}`);
     else if (action === "allin")
       s.actionLog.push(`${player.username} allin ${putIn}`);
-    this.recordAction(userId, action as StructuredAction["action"], putIn);
+    // Short-stack shoves are offered as "allin" even when they only call the
+    // current bet; profiling stats must see the effective action.
+    const effective: StructuredAction["action"] =
+      action === "allin" && player.bet <= prevBet
+        ? "call"
+        : (action as StructuredAction["action"]);
+    this.recordAction(userId, effective, putIn);
 
     player.hasActed = true;
     // A genuine raise reopens the action for every other active player

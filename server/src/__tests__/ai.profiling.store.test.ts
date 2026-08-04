@@ -83,6 +83,26 @@ describe("ProfileStore", () => {
     expect(store.listProfiles("room1")).toHaveLength(0);
     expect(store.getRecentRecords("room1", "u1")).toHaveLength(0);
   });
+
+  it("pruneTo drops departed players but keeps seated and reserved ones", () => {
+    store.recordHand("room1", "u1", "alice", record("u1"));
+    store.recordHand("room1", "u2", "bob", record("u2"));
+    store.recordHand("room1", "u3", "carol", record("u3"));
+
+    store.pruneTo("room1", new Set(["u1", "u2"]));
+
+    expect(store.getProfile("room1", "u1")).toBeDefined();
+    expect(store.getProfile("room1", "u2")).toBeDefined();
+    expect(store.getProfile("room1", "u3")).toBeUndefined();
+    expect(store.getRecentRecords("room1", "u3")).toHaveLength(0);
+  });
+
+  it("pruneTo with nobody left clears the whole room", () => {
+    store.recordHand("room1", "u1", "alice", record("u1"));
+    store.pruneTo("room1", new Set());
+    expect(store.listProfiles("room1")).toHaveLength(0);
+    expect(store.getRecentRecords("room1", "u1")).toHaveLength(0);
+  });
 });
 
 describe("summarizeOpponent", () => {

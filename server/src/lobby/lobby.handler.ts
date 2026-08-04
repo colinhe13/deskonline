@@ -585,6 +585,11 @@ export class LobbyHandler {
       if (isAiUserId(p.userId)) continue;
       profileStore.recordHand(room.id, p.userId, p.username, record);
     }
+    // Forget players who already left so views stay bounded and current.
+    const keep = new Set<string>();
+    for (const seat of room.seats) if (seat.userId) keep.add(seat.userId);
+    for (const r of room.pendingSeatReservations) keep.add(r.userId);
+    profileStore.pruneTo(room.id, keep);
     this.broadcastProfiles(room);
     void this.runProfileSummaries(room);
   }
