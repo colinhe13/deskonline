@@ -17,6 +17,11 @@ import { isAiUserId, pickFreeAi } from "../ai/accounts.js";
 import { decideAiAction } from "../ai/decision.js";
 import { config } from "../config.js";
 import { ActionOption } from "../poker/types.js";
+import {
+  ChatMessage,
+  MAX_CHAT_LENGTH,
+  validateChatText,
+} from "../ws/protocol.js";
 
 const SETTLEMENT_WINDOW_MS = 5000;
 
@@ -128,6 +133,9 @@ export class LobbyHandler {
       case "room:list:request":
         this.sendRoomListToUser(userId);
         break;
+      case "room:chat:send":
+        this.handleChatSend(userId, username, payload);
+        break;
       case "ai:add":
         await this.handleAddAi(userId);
         break;
@@ -181,6 +189,42 @@ export class LobbyHandler {
     const engine = this.engines.get(room.id);
     if (!engine) return;
     engine.revealCards(userId);
+  }
+
+  // Identity and timestamps are server-generated; the client only supplies the
+  // text. Reserved (queued) users keep their spectator entry, so membership
+  // lookup covers them too.
+  private handleChatSend(userId: string, username: string, payload: unknown) {
+    const room = this.findRoomForUser(userId);
+    if (!room) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "NOT_IN_ROOM",
+        message: "请先进入房间",
+      });
+      return;
+    }
+
+    const p = payload as { text?: unknown } | null;
+    const result = validateChatText(p?.text);
+    if (!result.ok) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: result.code,
+        message:
+          result.code === "CHAT_EMPTY"
+            ? "消息不能为空"
+            : `消息最长 ${MAX_CHAT_LENGTH} 字`,
+      });
+      return;
+    }
+
+    const message: ChatMessage = {
+      id: randomUUID(),
+      userId,
+      username,
+      text: result.text,
+      sentAt: Date.now(),
+    };
+    room.broadcast(this.gateway, "room:chat:message", { message });
   }
 
   // ------------------------------------------------------------------
