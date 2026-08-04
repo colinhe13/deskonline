@@ -434,15 +434,20 @@ export class PokerEngine {
     if (activePlayers.length === 1) {
       const winner = activePlayers[0];
       winner.chips += s.pot;
-      // The winner of a fold does NOT auto-reveal; they may choose to via revealCards.
-      this.lastHandWinners = new Set([winner.userId]);
+      // Human fold winners may opt in via revealCards; AI winners always reveal
+      // so the table can see what they were holding.
       const result: HandResult = {
         winners: [{ userId: winner.userId, amount: s.pot }],
         showdownCards: {},
         handNames: {},
         reason: "fold",
       };
+      this.lastHandWinners = new Set([winner.userId]);
       this.onBroadcast("poker:hand_result", result);
+      if (winner.isAi) {
+        winner.cardsRevealed = true;
+        this.broadcastState();
+      }
       return;
     }
 

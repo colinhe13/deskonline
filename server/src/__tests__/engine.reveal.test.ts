@@ -5,12 +5,14 @@ function makeEngine(
   playerCount: number,
   dealerIndex = 0,
   chips: number | number[] = 1000,
+  aiFlags: boolean[] = [],
 ) {
   const players = Array.from({ length: playerCount }, (_, i) => ({
     userId: `u${i}`,
     username: `P${i}`,
     seatIndex: i,
     chips: typeof chips === "number" ? chips : (chips[i] ?? 1000),
+    isAi: aiFlags[i] ?? false,
   }));
   const broadcasts: { type: string; payload: unknown }[] = [];
   const engine = new PokerEngine(
@@ -158,6 +160,51 @@ describe("reveal edge cases", () => {
     expect(engine.revealCards("u0")).toBe(true);
     expect(engine.nextHand()).toBe(true);
     expect(engine.revealCards("u0")).toBe(false); // phase is preflop again
+  });
+});
+
+describe("AI fold win reveal", () => {
+  it("AI fold winner's cards are auto-revealed to everyone", () => {
+    const { engine, broadcasts } = makeEngine(3, 0, 1000, [true, false, false]);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+
+    // Visible to every other player and to spectators
+    expect(cardCountFor(engine, "u1", "u0")).toBe(2);
+    expect(cardCountFor(engine, "u2", "u0")).toBe(2);
+    const spectatorView = engine.getStateForSpectator();
+    expect(
+      spectatorView.players.find((p) => p.userId === "u0")!.cards,
+    ).toHaveLength(2);
+
+    // A settled snapshot is broadcast after hand_result so clients render the cards
+    const resultIdx = broadcasts.findIndex(
+      (b) => b.type === "poker:hand_result",
+    );
+    expect(resultIdx).toBeGreaterThanOrEqual(0);
+    expect(
+      broadcasts.slice(resultIdx + 1).some((b) => b.type === "poker:update"),
+    ).toBe(true);
+
+    // Already revealed, so an explicit reveal is a no-op
+    expect(engine.revealCards("u0")).toBe(false);
+  });
+
+  it("human fold winner stays hidden even when the folders are AI", () => {
+    const { engine } = makeEngine(3, 0, 1000, [false, true, true]);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+
+    expect(cardCountFor(engine, "u1", "u0")).toBe(0);
+    expect(cardCountFor(engine, "u2", "u0")).toBe(0);
+    expect(engine.revealCards("u0")).toBe(true);
+    expect(cardCountFor(engine, "u1", "u0")).toBe(2);
   });
 });
 
