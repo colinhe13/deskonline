@@ -50,6 +50,7 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
       chips: 0,
       buyIn: 0,
       connected: true,
+      autoManaged: false,
       confirmed: true,
       bet: 0,
       folded: false,
@@ -90,6 +91,21 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(occupied).toContain("ALL IN");
     expect(occupied).toContain("房主");
     expect(occupied).toContain("winner");
+
+    const managed = await render(PlayerSeat, {
+      seat: {
+        ...base,
+        userId: "u2",
+        username: "bob",
+        autoManaged: true,
+      },
+      isHost: false,
+      isMe: false,
+      isCurrent: false,
+      isWinner: false,
+    });
+    expect(managed).toContain("managed-badge");
+    expect(managed).toContain("托管");
   });
 
   it("PlayerSeat：AI 徽标与房主专属移除按钮", async () => {
@@ -101,6 +117,7 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
       chips: 150,
       buyIn: 150,
       connected: true,
+      autoManaged: false,
       confirmed: true,
       bet: 0,
       folded: false,

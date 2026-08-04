@@ -8,6 +8,7 @@ export interface SeatInfo {
   chips: number;
   buyIn: number;
   connected: boolean;
+  autoManaged: boolean;
   confirmed: boolean;
   isAi?: boolean;
 }
@@ -110,10 +111,16 @@ export const useGameStore = defineStore("game", () => {
     ),
   );
 
+  const mySeat = computed(() =>
+    room.value?.seats.find((seat) => seat.userId === myUserId.value),
+  );
+
   const isMyTurn = computed(
     () =>
       room.value?.status === "playing" &&
       !isSpectator.value &&
+      !!mySeat.value?.connected &&
+      !mySeat.value?.autoManaged &&
       availableActions.value.length > 0,
   );
 
@@ -154,6 +161,7 @@ export const useGameStore = defineStore("game", () => {
     myUserId,
     isSpectator,
     myPendingSeatReservation,
+    mySeat,
     isMyTurn,
     currentPlayer,
     setRoom,

@@ -7,6 +7,7 @@
       current: isCurrent,
       'is-me': isMe,
       winner: isWinner,
+      managed: seat.autoManaged,
     }"
   >
     <template v-if="seat.userId">
@@ -46,6 +47,7 @@
       <div v-if="seat.folded" class="fold-badge">弃牌</div>
       <div v-if="seat.allIn" class="allin-badge">ALL IN</div>
       <div v-if="!seat.connected" class="dc-badge">断线</div>
+      <div v-if="seat.autoManaged" class="managed-badge">托管</div>
     </template>
     <template v-else>
       <div class="avatar empty">
@@ -69,6 +71,7 @@ interface SeatView {
   chips: number;
   buyIn: number;
   connected: boolean;
+  autoManaged: boolean;
   confirmed: boolean;
   bet: number;
   folded: boolean;
@@ -311,6 +314,7 @@ const avatarStyle = computed(() => {
 .fold-badge,
 .allin-badge,
 .dc-badge,
+.managed-badge,
 .unconfirmed-badge {
   font-size: 0.6rem;
   padding: 0 5px;
@@ -328,6 +332,10 @@ const avatarStyle = computed(() => {
 }
 .dc-badge {
   background: var(--danger);
+}
+.managed-badge {
+  background: rgba(240, 199, 94, 0.8);
+  color: #2a1b05;
 }
 .folded {
   opacity: 0.45;
@@ -375,6 +383,7 @@ const avatarStyle = computed(() => {
   .fold-badge,
   .allin-badge,
   .dc-badge,
+  .managed-badge,
   .unconfirmed-badge {
     font-size: 0.5rem;
     padding: 0 3px;
