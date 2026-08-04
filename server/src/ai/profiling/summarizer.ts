@@ -15,7 +15,8 @@ const summarySchema = z.object({ summary: z.string().min(1) });
 
 function formatHand(index: number, record: HandRecord, userId: string): string {
   const lines = record.actions.map(
-    (a) => `${a.street}:${a.userId === userId ? "hero" : a.userId}:${a.action}${a.amount ? a.amount : ""}`,
+    (a) =>
+      `${a.street}:${a.userId === userId ? "hero" : a.userId}:${a.action}${a.amount ? a.amount : ""}`,
   );
   const won = record.winners.find((w) => w.userId === userId);
   const outcome = won

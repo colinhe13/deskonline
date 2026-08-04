@@ -17,7 +17,10 @@ function action(
   return { street, userId, action: act, amount };
 }
 
-function record(actions: StructuredAction[], extra?: Partial<HandRecord>): HandRecord {
+function record(
+  actions: StructuredAction[],
+  extra?: Partial<HandRecord>,
+): HandRecord {
   return {
     actions,
     winners: extra?.winners ?? [{ userId: "u1", amount: 6 }],
@@ -47,7 +50,11 @@ describe("buildHandRecord", () => {
 describe("applyHandToStats", () => {
   it("ignores users who did not participate", () => {
     const stats = createStats();
-    applyHandToStats(stats, record([action("preflop", "u1", "blind", 1)]), "u9");
+    applyHandToStats(
+      stats,
+      record([action("preflop", "u1", "blind", 1)]),
+      "u9",
+    );
     expect(stats.hands).toBe(0);
   });
 
@@ -201,11 +208,7 @@ describe("applyHandToStats", () => {
       }),
       "u1",
     );
-    applyHandToStats(
-      stats,
-      record([action("preflop", "u1", "fold")]),
-      "u1",
-    );
+    applyHandToStats(stats, record([action("preflop", "u1", "fold")]), "u1");
     expect(computeRates(stats).wtsd).toBe(50);
   });
 });

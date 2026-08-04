@@ -574,7 +574,11 @@ export class LobbyHandler {
   // Records one settled hand for every human participant. AI accounts are
   // never profiled. Called synchronously at settlement; the LLM summary runs
   // asynchronously and never blocks the game loop.
-  private collectHandForProfiling(room: Room, engine: PokerEngine, result: HandResult) {
+  private collectHandForProfiling(
+    room: Room,
+    engine: PokerEngine,
+    result: HandResult,
+  ) {
     const record = buildHandRecord(engine.getHandHistory(), result);
     const state = engine.getState();
     for (const p of state.players) {

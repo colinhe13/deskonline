@@ -47,7 +47,10 @@ export function applyHandToStats(
     }
 
     if (a.userId === userId) {
-      const facingRaise = pendingRaiser !== null && pendingRaiser !== userId && !responded.has(userId);
+      const facingRaise =
+        pendingRaiser !== null &&
+        pendingRaiser !== userId &&
+        !responded.has(userId);
 
       if (a.street === "preflop" && a.action !== "blind") {
         if (a.action === "call" || AGGRESSIVE.has(a.action)) vpip = true;

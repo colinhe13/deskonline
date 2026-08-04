@@ -8,7 +8,12 @@ export class ProfileStore {
   private rooms = new Map<string, Map<string, OpponentProfile>>();
   private recentRecords = new Map<string, Map<string, HandRecord[]>>();
 
-  recordHand(roomId: string, userId: string, username: string, record: HandRecord): void {
+  recordHand(
+    roomId: string,
+    userId: string,
+    username: string,
+    record: HandRecord,
+  ): void {
     let profiles = this.rooms.get(roomId);
     if (!profiles) {
       profiles = new Map();

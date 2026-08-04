@@ -227,7 +227,12 @@ describe("buildDecisionContext opponent profiles", () => {
   });
 
   it("filters out profiles below the sample threshold", () => {
-    const coldProfile = { ...readyProfile, ready: false, stats: null, note: null };
+    const coldProfile = {
+      ...readyProfile,
+      ready: false,
+      stats: null,
+      note: null,
+    };
     const ctx = buildDecisionContext(state(), "ai1", [coldProfile]);
     expect(ctx).not.toHaveProperty("opponentProfiles");
   });
