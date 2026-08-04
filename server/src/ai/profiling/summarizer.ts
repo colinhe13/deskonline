@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { config } from "../../config.js";
 import { callLlm } from "../llm.client.js";
 import { computeRates } from "./stats.js";
 import type { HandRecord, OpponentProfile } from "./types.js";
@@ -52,7 +53,7 @@ export async function summarizeOpponent(
   const parsed = await callLlm(
     PROFILE_SUMMARY_SYSTEM_PROMPT,
     buildSummaryInput(profile, recentRecords),
-    { maxTokens: 300 },
+    { maxTokens: 300, timeoutMs: config.aiSummaryTimeoutMs },
   );
   if (!parsed) return null;
   const result = summarySchema.safeParse(parsed);

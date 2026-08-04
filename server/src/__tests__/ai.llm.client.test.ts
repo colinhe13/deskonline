@@ -97,6 +97,39 @@ describe("llm.client", () => {
     await expect(callLlm("SYS", "USER")).resolves.toBeNull();
   });
 
+  it("honors a per-call timeoutMs override", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(fetch).mockImplementation(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            (init?.signal as AbortSignal).addEventListener("abort", () => {
+              const err = new Error("aborted");
+              err.name = "AbortError";
+              reject(err);
+            });
+          }),
+      );
+      const promise = callLlm("SYS", "USER", { timeoutMs: 5 });
+      // Default timeout is 30ms; the override must abort at 5ms.
+      await vi.advanceTimersByTimeAsync(5);
+      await expect(promise).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("forwards the per-call maxTokens override", async () => {
+    vi.mocked(fetch).mockResolvedValue(okResponse('{"action":"check"}'));
+    await callLlm("SYS", "USER", { maxTokens: 300 });
+    const [, init] = vi.mocked(fetch).mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(init.body as string);
+    expect(body.max_tokens).toBe(300);
+  });
+
   it("never logs the api key or full response body", async () => {
     const errors: unknown[] = [];
     vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {

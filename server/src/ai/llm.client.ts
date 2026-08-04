@@ -18,10 +18,11 @@ function stripFences(text: string): string {
 export async function callLlm(
   systemPrompt: string,
   userContent: string,
-  opts?: { maxTokens?: number },
+  opts?: { maxTokens?: number; timeoutMs?: number },
 ): Promise<Record<string, unknown> | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.aiTimeoutMs);
+  const timeoutMs = opts?.timeoutMs ?? config.aiTimeoutMs;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
 
   try {

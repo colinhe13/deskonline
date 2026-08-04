@@ -8,6 +8,7 @@ import { callLlm } from "../ai/llm.client.js";
 import { ProfileStore } from "../ai/profiling/store.js";
 import { summarizeOpponent } from "../ai/profiling/summarizer.js";
 import type { HandRecord } from "../ai/profiling/types.js";
+import { config } from "../config.js";
 
 const mockedCallLlm = vi.mocked(callLlm);
 
@@ -137,7 +138,7 @@ describe("summarizeOpponent", () => {
     expect(mockedCallLlm).toHaveBeenCalledWith(
       expect.stringContaining("对手分析"),
       expect.stringContaining('"stats"'),
-      { maxTokens: 300 },
+      { maxTokens: 300, timeoutMs: config.aiSummaryTimeoutMs },
     );
   });
 

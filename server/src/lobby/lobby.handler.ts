@@ -630,15 +630,18 @@ export class LobbyHandler {
 
     this.profilingBusy.add(roomId);
     try {
-      for (const profile of eligible) {
-        const note = await summarizeOpponent(
-          profile,
-          profileStore.getRecentRecords(roomId, profile.userId),
-        );
-        if (note) {
-          profileStore.setNote(roomId, profile.userId, note);
-          this.broadcastProfiles(room);
-        }
+      // Summarize only the stalest player per hand boundary: serial summary
+      // calls share the API key with decision calls and stall them.
+      const target = eligible.reduce((a, b) =>
+        b.handsSinceLastSummary > a.handsSinceLastSummary ? b : a,
+      );
+      const note = await summarizeOpponent(
+        target,
+        profileStore.getRecentRecords(roomId, target.userId),
+      );
+      if (note) {
+        profileStore.setNote(roomId, target.userId, note);
+        this.broadcastProfiles(room);
       }
     } catch (err) {
       console.error("[profiling] summary run failed", err);
