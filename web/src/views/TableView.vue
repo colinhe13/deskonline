@@ -167,20 +167,41 @@
     </Transition>
 
     <div v-if="game.handResult" class="hand-result-banner">
-      <div
-        v-for="w in game.handResult.winners"
-        :key="w.userId"
-        class="winner-block"
-      >
-        <span class="winner-name">{{ winnerName(w.userId) }}</span>
-        <span class="winner-hand">
-          {{
-            game.handResult.reason === "showdown"
-              ? game.handResult.handNames[w.userId] || ""
-              : "其他玩家弃牌"
-          }}
+      <div class="banner-main">
+        <div
+          v-for="w in game.handResult.winners"
+          :key="w.userId"
+          class="winner-block"
+        >
+          <span class="winner-name">{{ winnerName(w.userId) }}</span>
+          <span class="winner-hand">
+            {{
+              game.handResult.reason === "showdown"
+                ? game.handResult.handNames[w.userId] || ""
+                : "其他玩家弃牌"
+            }}
+          </span>
+          <span class="winner-amount">+{{ w.amount }}</span>
+        </div>
+        <div
+          v-for="r in game.handResult.refunds ?? []"
+          :key="'refund-' + r.userId"
+          class="refund-block"
+        >
+          <span class="refund-name">{{ winnerName(r.userId) }}</span>
+          <span class="refund-text">收回未跟注筹码</span>
+          <span class="refund-amount">+{{ r.amount }}</span>
+        </div>
+      </div>
+      <div v-if="showdownComparison.length" class="banner-comparison">
+        <span
+          v-for="c in showdownComparison"
+          :key="c.userId"
+          class="comparison-item"
+          :class="{ 'is-winner': c.isWinner }"
+        >
+          {{ c.name }}：{{ c.handName }}
         </span>
-        <span class="winner-amount">+{{ w.amount }}</span>
       </div>
       <button v-if="canRevealCards" class="reveal-btn" @click="revealMyCards">
         展示手牌
@@ -259,6 +280,7 @@ const selectedSeatForQueue = ref<number | null>(null);
 const queueSubmitting = ref(false);
 const queueCancelling = ref(false);
 let errorTimer: ReturnType<typeof setTimeout> | null = null;
+let handResultTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isHost = computed(
   () => game.room?.hostId != null && game.room.hostId === game.myUserId,
@@ -389,14 +411,23 @@ function handlePokerUpdate(payload: unknown) {
   // re-broadcasts a "settled" state right after showdown, which must not wipe
   // the result display.
   if (p.state.phase === "preflop") {
+    if (handResultTimer) {
+      clearTimeout(handResultTimer);
+      handResultTimer = null;
+    }
     game.setHandResult(null);
     revealedMine.value = false;
   }
 }
 
 function handleHandResult(payload: unknown) {
-  game.setHandResult(payload as HandResultInfo);
-  setTimeout(() => game.setHandResult(null), 5000);
+  const result = payload as HandResultInfo;
+  game.setHandResult(result);
+  if (handResultTimer) clearTimeout(handResultTimer);
+  handResultTimer = setTimeout(() => {
+    handResultTimer = null;
+    game.setHandResult(null);
+  }, result.displayMs ?? 5000);
 }
 
 function handleRoomError(payload: unknown) {
@@ -414,6 +445,18 @@ function winnerName(userId: string): string {
   const player = game.pokerState?.players.find((p) => p.userId === userId);
   return player?.username || userId;
 }
+
+const showdownComparison = computed(() => {
+  const r = game.handResult;
+  if (!r || r.reason !== "showdown") return [];
+  const winnerIds = new Set(r.winners.map((w) => w.userId));
+  return Object.entries(r.handNames).map(([userId, handName]) => ({
+    userId,
+    name: winnerName(userId),
+    handName,
+    isWinner: winnerIds.has(userId),
+  }));
+});
 
 function handleAction(type: string, amount?: number) {
   send("poker:action", { action: type, amount });
@@ -875,10 +918,10 @@ onUnmounted(() => {
   color: var(--text);
   padding: 0.55rem 1rem;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+  gap: 0.35rem;
   overflow: hidden;
   animation: banner-drop 0.5s var(--ease-spring) both;
 }
@@ -934,6 +977,47 @@ onUnmounted(() => {
 .winner-amount {
   font-size: 1.1rem;
   color: var(--success);
+  font-weight: bold;
+}
+.banner-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  position: relative;
+}
+.refund-block {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.refund-name {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.refund-text {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.refund-amount {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.banner-comparison {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+}
+.comparison-item {
+  color: var(--text-dim);
+}
+.comparison-item.is-winner {
+  color: var(--gold);
   font-weight: bold;
 }
 .reveal-btn {
