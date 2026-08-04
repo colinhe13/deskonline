@@ -21,6 +21,9 @@
         <span v-if="room.spectatorCount > 0">
           观战 {{ room.spectatorCount }}
         </span>
+        <span v-if="room.pendingSeatReservationCount">
+          待入座 {{ room.pendingSeatReservationCount }}
+        </span>
       </div>
       <div class="room-status" :class="room.status">
         <span class="status-dot" aria-hidden="true"></span>

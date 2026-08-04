@@ -5,7 +5,9 @@
         v-for="seat in mergedSeats"
         :key="seat.index"
         class="seat-position"
-        :class="{ selectable: !seat.userId && canMoveSeats }"
+        :class="{
+          selectable: !seat.userId && !seat.pendingReservation && canMoveSeats,
+        }"
         :style="seatStyle(seat.index)"
         @click="onSeatClick(seat)"
       >
@@ -37,6 +39,7 @@ import type {
   SeatInfo,
   PokerPlayer,
   HandResultInfo,
+  PendingSeatReservationInfo,
 } from "../../stores/game";
 import PlayerSeat from "./PlayerSeat.vue";
 import CommunityCards from "./CommunityCards.vue";
@@ -68,14 +71,18 @@ const isViewerSpectator = computed(
 
 const canMoveSeats = computed(
   () =>
-    props.room?.status === "waiting" &&
     !!props.myUserId &&
-    (!!props.room?.seats.some((s) => s.userId === props.myUserId) ||
-      isViewerSpectator.value),
+    !props.room?.pendingSeatReservations?.some(
+      (reservation) => reservation.userId === props.myUserId,
+    ) &&
+    ((props.room?.status === "waiting" &&
+      (!!props.room?.seats.some((s) => s.userId === props.myUserId) ||
+        isViewerSpectator.value)) ||
+      (props.room?.status === "playing" && isViewerSpectator.value)),
 );
 
 function onSeatClick(seat: MergedSeat) {
-  if (!seat.userId && canMoveSeats.value) {
+  if (!seat.userId && !seat.pendingReservation && canMoveSeats.value) {
     emit("sit", seat.index);
   }
 }
@@ -86,6 +93,7 @@ interface MergedSeat extends SeatInfo {
   allIn: boolean;
   isDealer: boolean;
   cards: { rank: string; suit: string }[];
+  pendingReservation?: PendingSeatReservationInfo;
 }
 
 const mergedSeats = computed<MergedSeat[]>(() => {
@@ -94,8 +102,12 @@ const mergedSeats = computed<MergedSeat[]>(() => {
     const player: PokerPlayer | undefined = props.pokerState?.players.find(
       (p) => p.userId === seat.userId,
     );
+    const pendingReservation = props.room?.pendingSeatReservations?.find(
+      (reservation) => reservation.seatIndex === seat.index,
+    );
     return {
       ...seat,
+      pendingReservation,
       chips: player ? player.chips : seat.chips,
       bet: player?.bet || 0,
       folded: player?.folded || false,

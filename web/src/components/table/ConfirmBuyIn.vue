@@ -1,7 +1,7 @@
 <template>
   <div class="confirm-buyin">
     <div class="confirm-card">
-      <h3>确认带入金额</h3>
+      <h3>{{ title || "确认带入金额" }}</h3>
       <p class="range-hint">范围 {{ minBuyIn }} - {{ maxBuyIn }}</p>
       <input
         type="range"
@@ -20,7 +20,7 @@
           class="amount-input"
         />
         <button class="confirm-btn" :disabled="!valid" @click="confirm">
-          确认带入
+          {{ submitLabel || "确认带入" }}
         </button>
       </div>
       <p v-if="!valid" class="error">
@@ -33,7 +33,12 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 
-const props = defineProps<{ minBuyIn: number; maxBuyIn: number }>();
+const props = defineProps<{
+  minBuyIn: number;
+  maxBuyIn: number;
+  title?: string;
+  submitLabel?: string;
+}>();
 const emit = defineEmits<{ confirm: [amount: number] }>();
 
 const amount = ref(props.minBuyIn);
@@ -41,7 +46,10 @@ const step = computed(() =>
   Math.max(1, Math.floor((props.maxBuyIn - props.minBuyIn) / 100)),
 );
 const valid = computed(
-  () => amount.value >= props.minBuyIn && amount.value <= props.maxBuyIn,
+  () =>
+    Number.isInteger(amount.value) &&
+    amount.value >= props.minBuyIn &&
+    amount.value <= props.maxBuyIn,
 );
 
 function confirm() {

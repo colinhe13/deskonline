@@ -13,6 +13,7 @@ export interface RoomSummary {
   maxBuyIn: number;
   status: string;
   spectatorCount: number;
+  pendingSeatReservationCount?: number;
 }
 
 export const useLobbyStore = defineStore("lobby", () => {

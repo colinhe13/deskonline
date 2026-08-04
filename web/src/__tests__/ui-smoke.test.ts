@@ -320,6 +320,77 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(seatedViewer).not.toContain("selectable");
   });
 
+  it("PokerTable：进行中观战者可预约空座，已预约座位不可重复选择", async () => {
+    const room = {
+      id: "main",
+      maxPlayers: 3,
+      hostId: "u1",
+      status: "playing",
+      smallBlind: 1,
+      bigBlind: 2,
+      minBuyIn: 150,
+      maxBuyIn: 750,
+      confirmedCount: 2,
+      playerCount: 2,
+      pendingSeatReservationCount: 0,
+      seats: [
+        {
+          index: 0,
+          userId: "u1",
+          username: "alice",
+          chips: 500,
+          buyIn: 500,
+          connected: true,
+          confirmed: true,
+        },
+        {
+          index: 1,
+          userId: "u2",
+          username: "bob",
+          chips: 500,
+          buyIn: 500,
+          connected: true,
+          confirmed: true,
+        },
+        {
+          index: 2,
+          userId: null,
+          username: null,
+          chips: 0,
+          buyIn: 0,
+          connected: false,
+          confirmed: false,
+        },
+      ],
+      spectators: [{ userId: "u9", username: "carol" }],
+      pendingSeatReservations: [],
+    };
+
+    const selectable = await render(PokerTable, {
+      room,
+      pokerState: null,
+      myUserId: "u9",
+      handResult: null,
+    });
+    expect(selectable).toContain("selectable");
+
+    const reserved = await render(PokerTable, {
+      room: {
+        ...room,
+        pendingSeatReservationCount: 1,
+        pendingSeatReservations: [
+          { userId: "u8", username: "dave", seatIndex: 2, status: "pending" },
+        ],
+      },
+      pokerState: null,
+      myUserId: "u9",
+      handResult: null,
+    });
+    expect(reserved).not.toContain("selectable");
+    expect(reserved).toContain("dave");
+    expect(reserved).toContain("待入座");
+  });
+
   it("CommunityCards：空槽位补齐到 5 张，5 张时无空槽", async () => {
     const none = await render(CommunityCards, { cards: [] });
     expect(none.match(/card-slot/g)?.length).toBe(5);
@@ -450,6 +521,15 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     const html = await render(ConfirmBuyIn, { minBuyIn: 150, maxBuyIn: 750 });
     expect(html).toContain("范围 150 - 750");
     expect(html).toContain("确认带入");
+
+    const queued = await render(ConfirmBuyIn, {
+      minBuyIn: 150,
+      maxBuyIn: 750,
+      title: "预约下一手带入",
+      submitLabel: "确认预约",
+    });
+    expect(queued).toContain("预约下一手带入");
+    expect(queued).toContain("确认预约");
   });
 
   it("RoomSettingsModal / TransferHostModal / VoiceIndicator 渲染", async () => {

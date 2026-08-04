@@ -39,10 +39,30 @@
 
     <div v-if="isSpectator" class="spectate-banner">
       <span class="spectate-badge">观战中</span>
-      <span v-if="canSitFromSpectate" class="spectate-hint">
+      <span v-if="myPendingReservation" class="spectate-hint">
+        已预约 {{ myPendingReservation.seatIndex + 1 }} 号座位，本手结束后入座
+      </span>
+      <span v-else-if="canSitFromSpectate" class="spectate-hint">
         点击空座位即可入座
       </span>
+      <span
+        v-else-if="game.room?.status === 'playing' && !isRoomFull"
+        class="spectate-hint"
+      >
+        点击空座预约下一手入座
+      </span>
+      <span v-else-if="game.room?.status === 'playing'" class="spectate-hint">
+        当前没有可预约的空座
+      </span>
       <span v-else class="spectate-hint">本手牌结束后可入座</span>
+      <button
+        v-if="myPendingReservation"
+        class="spectate-cancel"
+        :disabled="queueCancelling"
+        @click="cancelQueueJoin"
+      >
+        {{ queueCancelling ? "取消中..." : "取消预约" }}
+      </button>
       <button class="spectate-leave" @click="leaveRoom">退出观战</button>
     </div>
 
@@ -75,6 +95,15 @@
       :min-buy-in="game.room!.minBuyIn"
       :max-buy-in="game.room!.maxBuyIn"
       @confirm="confirmBuyIn"
+    />
+
+    <ConfirmBuyIn
+      v-if="showQueueBuyIn"
+      :min-buy-in="game.room!.minBuyIn"
+      :max-buy-in="game.room!.maxBuyIn"
+      title="预约下一手带入"
+      submit-label="确认预约"
+      @confirm="queueJoin"
     />
 
     <Transition name="modal">
@@ -162,6 +191,9 @@ const showSettings = ref(false);
 const showTransfer = ref(false);
 const errorMsg = ref("");
 const revealedMine = ref(false);
+const selectedSeatForQueue = ref<number | null>(null);
+const queueSubmitting = ref(false);
+const queueCancelling = ref(false);
 let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isHost = computed(
@@ -183,10 +215,25 @@ const spectatorNames = computed(
 );
 const canStart = computed(() => (game.room?.confirmedCount ?? 0) >= 2);
 const isRoomFull = computed(
-  () => !!game.room && game.room.playerCount >= game.room.maxPlayers,
+  () =>
+    !!game.room &&
+    game.room.playerCount + (game.room.pendingSeatReservationCount ?? 0) >=
+      game.room.maxPlayers,
 );
 const canSitFromSpectate = computed(
-  () => game.room?.status === "waiting" && !isRoomFull.value,
+  () =>
+    game.room?.status === "waiting" &&
+    !isRoomFull.value &&
+    !game.myPendingSeatReservation,
+);
+const myPendingReservation = computed(() => game.myPendingSeatReservation);
+const showQueueBuyIn = computed(
+  () =>
+    selectedSeatForQueue.value !== null &&
+    isSpectator.value &&
+    game.room?.status === "playing" &&
+    !myPendingReservation.value &&
+    !queueSubmitting.value,
 );
 const needConfirmBuyIn = computed(
   () =>
@@ -249,6 +296,8 @@ function handleHandResult(payload: unknown) {
 
 function handleRoomError(payload: unknown) {
   const p = payload as { message?: string };
+  queueSubmitting.value = false;
+  queueCancelling.value = false;
   showError(p.message || "操作失败");
 }
 
@@ -263,6 +312,23 @@ function handleAction(type: string, amount?: number) {
 
 function confirmBuyIn(amount: number) {
   send("room:confirm", { buyIn: amount });
+}
+
+function queueJoin(amount: number) {
+  const seatIndex = selectedSeatForQueue.value;
+  if (seatIndex === null || !game.room) return;
+  queueSubmitting.value = true;
+  send("room:queue-join", {
+    roomId: game.room.id,
+    seatIndex,
+    buyIn: amount,
+  });
+}
+
+function cancelQueueJoin() {
+  if (!myPendingReservation.value) return;
+  queueCancelling.value = true;
+  send("room:cancel-queue-join", {});
 }
 
 function saveSettings(form: {
@@ -283,6 +349,10 @@ function transferHost(targetUserId: string) {
 
 function handleSitDown(seatIndex: number) {
   if (isSpectator.value && game.room) {
+    if (game.room.status === "playing") {
+      selectedSeatForQueue.value = seatIndex;
+      return;
+    }
     send("room:join", { roomId: game.room.id, seatIndex });
   } else {
     send("room:move-seat", { seatIndex });
@@ -314,6 +384,16 @@ function handleReconnectSuccess(payload: unknown) {
   }
 }
 
+function handleQueueJoinAccepted() {
+  queueSubmitting.value = false;
+  selectedSeatForQueue.value = null;
+}
+
+function handleQueueJoinCancelled() {
+  queueCancelling.value = false;
+  selectedSeatForQueue.value = null;
+}
+
 // Not seated anywhere: entering the table URL directly (or after the 60s
 // eject window) should behave like the lobby entry — join the target room.
 function handleReconnectFailed() {
@@ -331,6 +411,8 @@ onMounted(() => {
   onMessage("room:error", handleRoomError);
   onMessage("reconnect:success", handleReconnectSuccess);
   onMessage("reconnect:failed", handleReconnectFailed);
+  onMessage("room:queue-join:accepted", handleQueueJoinAccepted);
+  onMessage("room:queue-join:cancelled", handleQueueJoinCancelled);
   // The global onopen already requests a snapshot; if the socket was open
   // before this view mounted, request it here so the state is never stale.
   if (isOpen()) {
@@ -346,6 +428,8 @@ onUnmounted(() => {
   offMessage("room:error", handleRoomError);
   offMessage("reconnect:success", handleReconnectSuccess);
   offMessage("reconnect:failed", handleReconnectFailed);
+  offMessage("room:queue-join:accepted", handleQueueJoinAccepted);
+  offMessage("room:queue-join:cancelled", handleQueueJoinCancelled);
 });
 </script>
 
@@ -485,6 +569,20 @@ onUnmounted(() => {
 .spectate-leave:hover {
   color: var(--text);
   border-color: var(--gold);
+}
+.spectate-cancel {
+  padding: 0.25rem 0.7rem;
+  min-height: 32px;
+  background: rgba(240, 199, 94, 0.12);
+  color: var(--gold-soft);
+  border: 1px solid rgba(240, 199, 94, 0.35);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.spectate-cancel:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 .spectator-list {
   text-align: center;

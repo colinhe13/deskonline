@@ -17,6 +17,13 @@ export interface SpectatorInfo {
   username: string;
 }
 
+export interface PendingSeatReservationInfo {
+  userId: string;
+  username: string;
+  seatIndex: number;
+  status: "pending";
+}
+
 export interface RoomDetail {
   id: string;
   hostId: string | null;
@@ -29,8 +36,10 @@ export interface RoomDetail {
   maxBuyIn: number;
   status: string;
   autoResume?: boolean;
+  pendingSeatReservationCount?: number;
   seats: SeatInfo[];
   spectators: SpectatorInfo[];
+  pendingSeatReservations: PendingSeatReservationInfo[];
 }
 
 export interface PokerCard {
@@ -89,7 +98,24 @@ export const useGameStore = defineStore("game", () => {
   const handResult = ref<HandResultInfo | null>(null);
   const myUserId = ref<string | null>(null);
 
-  const isMyTurn = computed(() => availableActions.value.length > 0);
+  const isSpectator = computed(
+    () =>
+      !!myUserId.value &&
+      !!room.value?.spectators?.some((s) => s.userId === myUserId.value),
+  );
+
+  const myPendingSeatReservation = computed(() =>
+    room.value?.pendingSeatReservations?.find(
+      (reservation) => reservation.userId === myUserId.value,
+    ),
+  );
+
+  const isMyTurn = computed(
+    () =>
+      room.value?.status === "playing" &&
+      !isSpectator.value &&
+      availableActions.value.length > 0,
+  );
 
   const currentPlayer = computed(() => {
     if (!pokerState.value) return null;
@@ -126,6 +152,8 @@ export const useGameStore = defineStore("game", () => {
     availableActions,
     handResult,
     myUserId,
+    isSpectator,
+    myPendingSeatReservation,
     isMyTurn,
     currentPlayer,
     setRoom,

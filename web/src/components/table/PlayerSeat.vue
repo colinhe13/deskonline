@@ -48,7 +48,12 @@
       <div v-if="!seat.connected" class="dc-badge">断线</div>
     </template>
     <template v-else>
-      <div class="avatar empty">空</div>
+      <div class="avatar empty">
+        {{ seat.pendingReservation ? "留" : "空" }}
+      </div>
+      <span v-if="seat.pendingReservation" class="reservation-badge">
+        {{ seat.pendingReservation.username }} 待入座
+      </span>
     </template>
   </div>
 </template>
@@ -71,6 +76,7 @@ interface SeatView {
   isDealer: boolean;
   isAi?: boolean;
   cards: { rank: string; suit: string }[];
+  pendingReservation?: { username: string; seatIndex: number };
 }
 
 const props = defineProps<{
@@ -193,6 +199,15 @@ const avatarStyle = computed(() => {
   font-size: var(--fs-sm);
   border: 2px dashed var(--glass-border);
   box-shadow: none;
+}
+.reservation-badge {
+  color: var(--gold-soft);
+  font-size: 0.58rem;
+  white-space: nowrap;
+  background: rgba(240, 199, 94, 0.14);
+  border: 1px solid rgba(240, 199, 94, 0.35);
+  border-radius: var(--radius-pill);
+  padding: 0.08rem 0.35rem;
 }
 .dealer-btn {
   position: absolute;
