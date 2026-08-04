@@ -13,5 +13,7 @@ export function buildHandRecord(
       amount: w.amount,
     })),
     showdownParticipantIds: Object.keys(result.showdownCards),
+    // Hand names are already public at showdown; raw card faces stay excluded.
+    revealedHandNames: { ...result.handNames },
   };
 }

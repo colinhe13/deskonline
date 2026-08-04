@@ -25,6 +25,7 @@ function record(
     actions,
     winners: extra?.winners ?? [{ userId: "u1", amount: 6 }],
     showdownParticipantIds: extra?.showdownParticipantIds ?? [],
+    revealedHandNames: extra?.revealedHandNames ?? {},
   };
 }
 
@@ -38,13 +39,28 @@ describe("buildHandRecord", () => {
         u1: [{ suit: "hearts", rank: "A" }],
         u2: [{ suit: "clubs", rank: "K" }],
       },
-      handNames: {},
+      handNames: { u1: "高牌 A", u2: "一对 K" },
       reason: "showdown",
     });
     expect(rec.actions).toEqual(history);
     expect(rec.actions).not.toBe(history);
     expect(rec.winners).toEqual([{ userId: "u2", amount: 10 }]);
     expect(rec.showdownParticipantIds.sort()).toEqual(["u1", "u2"]);
+    expect(rec.revealedHandNames).toEqual({ u1: "高牌 A", u2: "一对 K" });
+    // Hand names only; raw card faces never enter the profile record.
+    expect(JSON.stringify(rec)).not.toMatch(/[2-9TJQKA][hdcs]\b/);
+    expect(JSON.stringify(rec)).not.toMatch(/hearts|clubs|diamonds|spades/);
+  });
+
+  it("leaves revealedHandNames empty on a fold win", () => {
+    const rec = buildHandRecord([action("preflop", "u1", "blind", 1)], {
+      winners: [{ userId: "u1", amount: 3 }],
+      refunds: [],
+      showdownCards: {},
+      handNames: {},
+      reason: "fold",
+    });
+    expect(rec.revealedHandNames).toEqual({});
   });
 });
 

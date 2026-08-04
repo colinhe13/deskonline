@@ -20,6 +20,7 @@ function record(userId: string): HandRecord {
     ],
     winners: [{ userId, amount: 6 }],
     showdownParticipantIds: [],
+    revealedHandNames: {},
   };
 }
 

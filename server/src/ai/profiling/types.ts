@@ -4,6 +4,10 @@ export interface HandRecord {
   actions: StructuredAction[];
   winners: { userId: string; amount: number }[];
   showdownParticipantIds: string[];
+  // Public hand names (e.g. "两对 K 和 9") for revealed players: filled from
+  // HandResult.handNames at showdown, extended later by voluntary reveals.
+  // Never raw card faces.
+  revealedHandNames: Record<string, string>;
 }
 
 // Raw counters; all rates are derived on read to avoid float drift.
