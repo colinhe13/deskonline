@@ -386,9 +386,7 @@ export class LobbyHandler {
           if (!this.engines.get(room.id) && room.status === "playing") {
             room.status = "waiting";
             room.autoResume = true;
-            room.broadcast(this.gateway, "room:state", {
-              room: room.toDetail(),
-            });
+            this.sendRoomState(room);
           }
         });
       }, SETTLEMENT_WINDOW_MS);
@@ -591,6 +589,20 @@ export class LobbyHandler {
     room.broadcast(this.gateway, "ai:profile:update", {
       profiles: profileStore.getViews(room.id),
     });
+  }
+
+  // room:state is the full snapshot (also sent on reconnect); attaching the
+  // profile views here lets clients rebuild their profile cache from scratch.
+  private roomStatePayload(room: Room) {
+    return { room: room.toDetail(), profiles: profileStore.getViews(room.id) };
+  }
+
+  private sendRoomState(room: Room) {
+    room.broadcast(this.gateway, "room:state", this.roomStatePayload(room));
+  }
+
+  private sendRoomStateToUser(room: Room, userId: string) {
+    this.gateway.sendToUser(userId, "room:state", this.roomStatePayload(room));
   }
 
   private async runProfileSummaries(room: Room) {
@@ -810,7 +822,7 @@ export class LobbyHandler {
       await this.removeAllAi(room);
       room.status = "waiting";
       room.autoResume = false;
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.sendRoomState(room);
       this.broadcastLobbyList();
       return;
     }
@@ -820,7 +832,7 @@ export class LobbyHandler {
     if (needsConfirm) {
       room.status = "waiting";
       room.autoResume = true;
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.sendRoomState(room);
       this.broadcastLobbyList();
       return;
     }
@@ -829,14 +841,14 @@ export class LobbyHandler {
     if (roster.length < 2) {
       room.status = "waiting";
       room.autoResume = false;
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.sendRoomState(room);
       this.broadcastLobbyList();
       return;
     }
 
     room.status = "playing";
     this.startEngine(room);
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
   }
 
   private async settleManagedDisconnectedPlayers(room: Room) {
@@ -930,9 +942,7 @@ export class LobbyHandler {
       }
       spectatingRoom.removeSpectator(userId);
       this.broadcastLobbyList();
-      spectatingRoom.broadcast(this.gateway, "room:state", {
-        room: spectatingRoom.toDetail(),
-      });
+      this.sendRoomState(spectatingRoom);
     }
 
     const room = roomManager.getRoom(targetRoomId);
@@ -953,7 +963,7 @@ export class LobbyHandler {
 
     room.addPlayer(userId, username);
     this.broadcastLobbyList();
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.sendVoiceToken(userId, username, room.id);
   }
 
@@ -966,16 +976,12 @@ export class LobbyHandler {
     seatIndex?: number,
   ) {
     if (room.findPendingSeatReservation(userId)) {
-      this.gateway.sendToUser(userId, "room:state", {
-        room: room.toDetail(),
-      });
+      this.sendRoomStateToUser(room, userId);
       this.sendSpectatorSnapshot(userId, room);
       return;
     }
     if (room.status !== "waiting" || room.isFull) {
-      this.gateway.sendToUser(userId, "room:state", {
-        room: room.toDetail(),
-      });
+      this.sendRoomStateToUser(room, userId);
       this.sendSpectatorSnapshot(userId, room);
       return;
     }
@@ -989,14 +995,14 @@ export class LobbyHandler {
       room.moveSeat(userId, seatIndex);
     }
     this.broadcastLobbyList();
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.sendVoiceToken(userId, username, room.id);
   }
 
   private enterAsSpectator(userId: string, username: string, room: Room) {
     room.addSpectator(userId, username);
     this.broadcastLobbyList();
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.sendSpectatorSnapshot(userId, room);
   }
 
@@ -1148,7 +1154,7 @@ export class LobbyHandler {
       return;
     }
 
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.broadcastLobbyList();
     this.gateway.sendToUser(userId, "room:queue-join:accepted", {
       roomId: room.id,
@@ -1186,7 +1192,7 @@ export class LobbyHandler {
 
     this.clearPendingDisconnectTimer(userId);
     room.removePendingSeatReservation(userId);
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.broadcastLobbyList();
     this.gateway.sendToUser(userId, "room:queue-join:cancelled", {
       roomId: room.id,
@@ -1241,9 +1247,7 @@ export class LobbyHandler {
 
         if (currentRoom.status === "playing" && this.engines.has(room.id)) {
           if (currentRoom.markAutoManaged(userId)) {
-            currentRoom.broadcast(this.gateway, "room:state", {
-              room: currentRoom.toDetail(),
-            });
+            this.sendRoomState(currentRoom);
             this.scheduleDisconnectedTurns(currentRoom);
           }
           return;
@@ -1280,9 +1284,7 @@ export class LobbyHandler {
           );
           if (cancelled) {
             currentRoom.removeSpectator(userId);
-            currentRoom.broadcast(this.gateway, "room:state", {
-              room: currentRoom.toDetail(),
-            });
+            this.sendRoomState(currentRoom);
             this.broadcastLobbyList();
           }
           return;
@@ -1349,7 +1351,7 @@ export class LobbyHandler {
     }
 
     room.confirmBuyIn(userId, buyIn);
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.tryResumeGame(room);
   }
 
@@ -1363,7 +1365,7 @@ export class LobbyHandler {
     if (room.humanSeats().some((s) => !s.confirmed)) return;
     room.autoResume = false;
     room.status = "playing";
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.startEngine(room);
   }
 
@@ -1456,7 +1458,7 @@ export class LobbyHandler {
     }
 
     this.broadcastLobbyList();
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
   }
 
   private handleTransferHost(userId: string, payload: unknown) {
@@ -1491,7 +1493,7 @@ export class LobbyHandler {
     }
 
     room.transferHost(p!.targetUserId!);
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
   }
 
   private handleMoveSeat(userId: string, payload: unknown) {
@@ -1517,7 +1519,7 @@ export class LobbyHandler {
       return;
     }
 
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
   }
 
   private handleStartGame(userId: string) {
@@ -1543,7 +1545,7 @@ export class LobbyHandler {
 
     room.status = "playing";
     room.autoResume = false;
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.startEngine(room);
   }
 
@@ -1564,9 +1566,7 @@ export class LobbyHandler {
       }
       pendingRoom.removeSpectator(userId);
       this.broadcastLobbyList();
-      pendingRoom.broadcast(this.gateway, "room:state", {
-        room: pendingRoom.toDetail(),
-      });
+      this.sendRoomState(pendingRoom);
       return;
     }
 
@@ -1574,9 +1574,7 @@ export class LobbyHandler {
     if (spectatingRoom) {
       spectatingRoom.removeSpectator(userId);
       this.broadcastLobbyList();
-      spectatingRoom.broadcast(this.gateway, "room:state", {
-        room: spectatingRoom.toDetail(),
-      });
+      this.sendRoomState(spectatingRoom);
       return;
     }
 
@@ -1590,9 +1588,7 @@ export class LobbyHandler {
     if (room.status === "playing" && engine) {
       if (room.markManualLeave(userId)) {
         engine.foldPlayer(userId);
-        room.broadcast(this.gateway, "room:state", {
-          room: room.toDetail(),
-        });
+        this.sendRoomState(room);
       }
       return;
     }
@@ -1655,7 +1651,7 @@ export class LobbyHandler {
       room.autoResume = false;
     }
 
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.broadcastLobbyList();
   }
 
@@ -1672,9 +1668,7 @@ export class LobbyHandler {
     if (pendingRoom) {
       pendingRoom.markPendingDisconnected(userId);
       this.schedulePendingDisconnect(pendingRoom, userId);
-      pendingRoom.broadcast(this.gateway, "room:state", {
-        room: pendingRoom.toDetail(),
-      });
+      this.sendRoomState(pendingRoom);
       return;
     }
 
@@ -1682,9 +1676,7 @@ export class LobbyHandler {
     if (spectatingRoom) {
       spectatingRoom.removeSpectator(userId);
       this.broadcastLobbyList();
-      spectatingRoom.broadcast(this.gateway, "room:state", {
-        room: spectatingRoom.toDetail(),
-      });
+      this.sendRoomState(spectatingRoom);
       return;
     }
 
@@ -1695,7 +1687,7 @@ export class LobbyHandler {
     if (!seat) return;
     if (room.pendingLeaveUserIds.includes(userId)) {
       room.markDisconnected(userId);
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.sendRoomState(room);
       return;
     }
     if (seat.connected) {
@@ -1704,7 +1696,7 @@ export class LobbyHandler {
     } else if (!seat.autoManaged && !this.seatDisconnectTimers.has(userId)) {
       this.scheduleSeatDisconnect(room, userId);
     }
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.scheduleDisconnectedTurns(room);
   }
 
@@ -1754,7 +1746,7 @@ export class LobbyHandler {
     room.confirmBuyIn(account.id, room.settings.minBuyIn);
 
     this.broadcastLobbyList();
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
     this.tryResumeGame(room);
   }
 
@@ -1784,14 +1776,14 @@ export class LobbyHandler {
     if (room.status === "playing") {
       // Mid-hand removal takes effect once the current hand settles.
       room.queuePendingLeave(targetId!);
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.sendRoomState(room);
       return;
     }
 
     const chips = room.removePlayer(targetId!);
     if (chips > 0) await addPoints(targetId!, chips);
     this.broadcastLobbyList();
-    room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+    this.sendRoomState(room);
   }
 
   // ------------------------------------------------------------------
@@ -1820,7 +1812,7 @@ export class LobbyHandler {
       this.clearSeatDisconnectTimer(userId);
       this.clearPendingDisconnectTimer(userId);
       room.markReconnected(userId);
-      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      this.sendRoomState(room);
 
       const engine = this.engines.get(room.id);
       if (engine) {
@@ -1843,9 +1835,7 @@ export class LobbyHandler {
         this.clearPendingDisconnectTimer(userId);
         spectatingRoom.markPendingReconnected(userId);
       }
-      spectatingRoom.broadcast(this.gateway, "room:state", {
-        room: spectatingRoom.toDetail(),
-      });
+      this.sendRoomState(spectatingRoom);
       this.sendSpectatorSnapshot(userId, spectatingRoom);
       this.gateway.sendToUser(userId, "reconnect:success", {
         roomId: spectatingRoom.id,
