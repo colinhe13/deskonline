@@ -12,6 +12,17 @@ export type GamePhase =
 
 export type PlayerActionType = "fold" | "check" | "call" | "raise" | "allin";
 
+export type StructuredActionType = PlayerActionType | "blind";
+
+// Machine-readable record of one public action, used for opponent profiling.
+// Must never contain hole cards or any private information.
+export interface StructuredAction {
+  street: "preflop" | "flop" | "turn" | "river";
+  userId: string;
+  action: StructuredActionType;
+  amount: number;
+}
+
 export interface ActionOption {
   type: PlayerActionType;
   amount?: number;

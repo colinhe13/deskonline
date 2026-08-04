@@ -3,6 +3,7 @@ import {
   PlayerState,
   Card,
   HandResult as EvaluatedHand,
+  StructuredAction,
 } from "./types.js";
 import { createDeck, shuffle, deal } from "./deck.js";
 import { evaluateHand, compareHands, describeHand } from "./evaluator.js";
@@ -20,6 +21,7 @@ export class PokerEngine {
   private state: GameState;
   private deck: Card[] = [];
   private lastHandWinners: Set<string> = new Set();
+  private handHistory: StructuredAction[] = [];
   private onBroadcast: (type: string, payload: unknown) => void;
 
   constructor(
@@ -103,6 +105,7 @@ export class PokerEngine {
     s.currentBet = 0;
     s.minRaise = s.bigBlind;
     s.actionLog = [];
+    this.handHistory = [];
     this.lastHandWinners = new Set();
 
     this.deck = shuffle(createDeck());
@@ -186,6 +189,30 @@ export class PokerEngine {
     player.bet += actual;
     player.totalBet += actual;
     if (player.chips === 0) player.allIn = true;
+    this.recordAction(player.userId, "blind", actual);
+  }
+
+  private recordAction(
+    userId: string,
+    action: StructuredAction["action"],
+    amount: number,
+  ) {
+    const phase = this.state.phase;
+    if (
+      phase !== "preflop" &&
+      phase !== "flop" &&
+      phase !== "turn" &&
+      phase !== "river"
+    ) {
+      return;
+    }
+    this.handHistory.push({ street: phase, userId, action, amount });
+  }
+
+  // Structured per-street action records of the current hand (public info
+  // only). Consumed by opponent profiling after settlement; reset per hand.
+  getHandHistory(): StructuredAction[] {
+    return [...this.handHistory];
   }
 
   handleAction(userId: string, action: string, amount?: number): boolean {
@@ -247,6 +274,7 @@ export class PokerEngine {
       s.actionLog.push(`${player.username} raise ${putIn}`);
     else if (action === "allin")
       s.actionLog.push(`${player.username} allin ${putIn}`);
+    this.recordAction(userId, action as StructuredAction["action"], putIn);
 
     player.hasActed = true;
     // A genuine raise reopens the action for every other active player
@@ -289,6 +317,7 @@ export class PokerEngine {
     player.folded = true;
     player.hasActed = true;
     s.actionLog.push(`${player.username} fold`);
+    this.recordAction(player.userId, "fold", 0);
     s.pot = s.players.reduce((sum, p) => sum + p.totalBet, 0);
 
     const activePlayers = s.players.filter((p) => !p.folded);
