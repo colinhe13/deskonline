@@ -23,6 +23,7 @@
     "@vue/test-utils": "^2.4.11",
     "@vue/tsconfig": "^0.9.1",
     "eslint": "^10.8.0",
+    "happy-dom": "^20.11.1",
     "prettier": "^3.9.6",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.65.0",

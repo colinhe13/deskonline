@@ -13,6 +13,7 @@ import LeaderboardModal from "../components/lobby/LeaderboardModal.vue";
 import ConfirmBuyIn from "../components/table/ConfirmBuyIn.vue";
 import RoomSettingsModal from "../components/table/RoomSettingsModal.vue";
 import TransferHostModal from "../components/table/TransferHostModal.vue";
+import SpectatorList from "../components/table/SpectatorList.vue";
 import VoiceIndicator from "../components/voice/VoiceIndicator.vue";
 
 async function render(component: unknown, props: Record<string, unknown> = {}) {
@@ -389,6 +390,41 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(reserved).not.toContain("selectable");
     expect(reserved).toContain("dave");
     expect(reserved).toContain("待入座");
+  });
+
+  it("SpectatorList：多观战者展示、排除当前用户、离开后及时更新", async () => {
+    const multiple = await render(SpectatorList, {
+      spectators: [
+        { userId: "u9", username: "carol" },
+        { userId: "u8", username: "dave" },
+        { userId: "me", username: "self" },
+      ],
+      myUserId: "me",
+    });
+    expect(multiple).toContain("观战者：carol、dave");
+    // 当前用户由“观战中”横幅单独展示，名单不得重复出现本人
+    expect(multiple).not.toContain("self");
+
+    // dave 离开后名单只剩 carol
+    const afterLeave = await render(SpectatorList, {
+      spectators: [{ userId: "u9", username: "carol" }],
+      myUserId: "me",
+    });
+    expect(afterLeave).toContain("观战者：carol");
+    expect(afterLeave).not.toContain("dave");
+
+    // 只剩自己在观战：名单整体隐藏
+    const onlyMe = await render(SpectatorList, {
+      spectators: [{ userId: "me", username: "self" }],
+      myUserId: "me",
+    });
+    expect(onlyMe.replace("<!---->", "").trim()).toBe("");
+
+    const none = await render(SpectatorList, {
+      spectators: [],
+      myUserId: null,
+    });
+    expect(none.replace("<!---->", "").trim()).toBe("");
   });
 
   it("CommunityCards：空槽位补齐到 5 张，5 张时无空槽", async () => {
