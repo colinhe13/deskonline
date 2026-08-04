@@ -39,12 +39,20 @@ export type ChatValidationResult =
   | { ok: false; code: "CHAT_EMPTY" | "CHAT_TOO_LONG" };
 
 // Length is measured in user-visible code points (after trimming) so Chinese
-// text and emoji count the same way they read.
+// text and emoji count the same way they read. The loop bails out as soon as
+// the limit is exceeded, so oversized payloads cost bounded work.
 export function validateChatText(raw: unknown): ChatValidationResult {
   if (typeof raw !== "string") return { ok: false, code: "CHAT_EMPTY" };
   const trimmed = raw.trim();
   if (trimmed.length === 0) return { ok: false, code: "CHAT_EMPTY" };
-  if ([...trimmed].length > MAX_CHAT_LENGTH) {
+
+  let count = 0;
+  for (let i = 0; i < trimmed.length && count <= MAX_CHAT_LENGTH;) {
+    const codePoint = trimmed.codePointAt(i)!;
+    i += codePoint > 0xffff ? 2 : 1;
+    count += 1;
+  }
+  if (count > MAX_CHAT_LENGTH) {
     return { ok: false, code: "CHAT_TOO_LONG" };
   }
   return { ok: true, text: trimmed };
