@@ -276,6 +276,37 @@ export class PokerEngine {
     return true;
   }
 
+  // Server-only fold for a player leaving during an active hand. Unlike a
+  // client action, this may fold an out-of-turn player without refunding their
+  // committed chips or changing the fixed hand roster.
+  foldPlayer(userId: string): boolean {
+    const s = this.state;
+    if (s.phase === "showdown" || s.phase === "settled") return false;
+
+    const player = s.players.find((p) => p.userId === userId);
+    if (!player || player.folded || player.allIn) return false;
+
+    player.folded = true;
+    player.hasActed = true;
+    s.actionLog.push(`${player.username} fold`);
+    s.pot = s.players.reduce((sum, p) => sum + p.totalBet, 0);
+
+    const activePlayers = s.players.filter((p) => !p.folded);
+    if (activePlayers.length === 1) {
+      this.settleHands();
+      return true;
+    }
+
+    if (isBettingRoundComplete(s.players, s.currentBet)) {
+      this.advancePhase();
+    } else if (s.players[s.currentPlayerIndex]?.userId === userId) {
+      this.moveToNextPlayer();
+    }
+
+    this.broadcastState();
+    return true;
+  }
+
   private moveToNextPlayer() {
     const s = this.state;
     const n = s.players.length;

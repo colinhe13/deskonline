@@ -128,6 +128,33 @@ describe("PokerEngine betting round order", () => {
     expect(s.phase).toBe("flop");
   });
 
+  it("server-forced fold preserves the committed pot for an out-of-turn leaver", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+
+    const state = engine.getState();
+    const potBefore = state.pot;
+    expect(currentUserId(state)).toBe("u0");
+
+    expect(engine.foldPlayer("u1")).toBe(true);
+    expect(state.players.find((p) => p.userId === "u1")?.folded).toBe(true);
+    expect(state.pot).toBe(potBefore);
+    expect(currentUserId(state)).toBe("u0");
+    expect(state.phase).toBe("preflop");
+  });
+
+  it("server-forced fold moves the current turn without rebuilding the hand", () => {
+    const { engine } = makeEngine(3, 0);
+    engine.startHand();
+    const state = engine.getState();
+
+    expect(engine.foldPlayer("u0")).toBe(true);
+    expect(state.players.find((p) => p.userId === "u0")?.folded).toBe(true);
+    expect(state.handNumber).toBe(1);
+    expect(currentUserId(state)).toBe("u1");
+    expect(state.phase).toBe("preflop");
+  });
+
   it("showdown settles with hand names and offers no further actions", () => {
     const { engine, broadcasts } = makeEngine(2, 0);
     engine.startHand();

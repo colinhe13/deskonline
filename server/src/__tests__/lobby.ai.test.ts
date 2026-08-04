@@ -325,6 +325,162 @@ describe("lobby AI lifecycle", () => {
     });
   });
 
+  describe("manual leave during a hand", () => {
+    async function startPlayingWithHumans() {
+      await joinAndConfirm("h1", "alice");
+      await joinAndConfirm("h2", "bob");
+      await joinAndConfirm("h3", "carol");
+      room.status = "playing";
+      handler["startEngine"](room);
+    }
+
+    it("folds the leaver and keeps the same engine for the remaining players", async () => {
+      await startPlayingWithHumans();
+      const engine = handler["engines"].get(room.id)!;
+      const handNumber = engine.getState().handNumber;
+
+      await handler.handleMessage("h2", "bob", "room:leave", {});
+
+      expect(handler["engines"].get(room.id)).toBe(engine);
+      expect(engine.getState().handNumber).toBe(handNumber);
+      expect(
+        engine.getState().players.find((p) => p.userId === "h2")?.folded,
+      ).toBe(true);
+      expect(room.pendingLeaveUserIds).toContain("h2");
+      expect(room.findSeatByUserId("h2")?.connected).toBe(false);
+      expect(room.status).toBe("playing");
+
+      await handler.handleMessage("h2", "bob", "room:leave", {});
+      expect(room.pendingLeaveUserIds).toEqual(["h2"]);
+      expect(
+        engine.getState().actionLog.filter((entry) => entry === "bob fold"),
+      ).toHaveLength(1);
+    });
+
+    it("removes the leaver and refunds only the remaining stack at the hand boundary", async () => {
+      await startPlayingWithHumans();
+      const engine = handler["engines"].get(room.id)!;
+      await handler.handleMessage("h1", "alice", "room:leave", {});
+
+      let guard = 0;
+      while (engine.getState().phase !== "settled" && guard++ < 100) {
+        const state = engine.getState();
+        const current = state.players[state.currentPlayerIndex]!;
+        const actions = engine.getAvailableActionsForPlayer(current.userId);
+        const check = actions.find((action) => action.type === "check");
+        const call = actions.find((action) => action.type === "call");
+        expect(
+          engine.handleAction(
+            current.userId,
+            check ? "check" : "call",
+            call?.amount,
+          ),
+        ).toBe(true);
+      }
+      expect(engine.getState().phase).toBe("settled");
+
+      const remainingStack = engine
+        .getState()
+        .players.find((player) => player.userId === "h1")!.chips;
+      vi.mocked(addPoints).mockClear();
+      await handler["handleHandEnd"](
+        room,
+        handler["engineGeneration"].get(room.id)!,
+      );
+
+      expect(room.findSeatByUserId("h1")).toBeUndefined();
+      expect(room.pendingLeaveUserIds).toEqual([]);
+      expect(addPoints).toHaveBeenCalledWith("h1", remainingStack);
+      expect(handler["engines"].get(room.id)).not.toBe(engine);
+      expect(
+        handler["engines"]
+          .get(room.id)!
+          .getState()
+          .players.map((p) => p.userId),
+      ).not.toContain("h1");
+    });
+
+    it("settles a manual leaver's active hold exactly once", async () => {
+      await startPlayingWithHumans();
+      const engine = handler["engines"].get(room.id)!;
+      const seat = room.findSeatByUserId("h2")!;
+      const player = engine.getState().players.find((p) => p.userId === "h2")!;
+      seat.buyInHoldOperationId = "hold-h2";
+
+      await handler.handleMessage("h2", "bob", "room:leave", {});
+
+      let guard = 0;
+      while (engine.getState().phase !== "settled" && guard++ < 100) {
+        const state = engine.getState();
+        const current = state.players[state.currentPlayerIndex]!;
+        const actions = engine.getAvailableActionsForPlayer(current.userId);
+        const check = actions.find((action) => action.type === "check");
+        const call = actions.find((action) => action.type === "call");
+        expect(
+          engine.handleAction(
+            current.userId,
+            check ? "check" : "call",
+            call?.amount,
+          ),
+        ).toBe(true);
+      }
+      expect(engine.getState().phase).toBe("settled");
+
+      vi.mocked(settleBuyInHold).mockClear();
+      vi.mocked(addPoints).mockClear();
+      await handler["handleHandEnd"](
+        room,
+        handler["engineGeneration"].get(room.id)!,
+      );
+
+      expect(settleBuyInHold).toHaveBeenCalledTimes(1);
+      expect(settleBuyInHold).toHaveBeenCalledWith("hold-h2", player.chips);
+      expect(addPoints).not.toHaveBeenCalledWith("h2", expect.anything());
+      expect(room.findSeatByUserId("h2")).toBeUndefined();
+    });
+
+    it("defers a leave received in the settlement window to the single hand boundary", async () => {
+      await startPlayingWithHumans();
+      const engine = handler["engines"].get(room.id)!;
+      engine.getState().phase = "settled";
+
+      await handler.handleMessage("h2", "bob", "room:leave", {});
+      expect(handler["engines"].get(room.id)).toBe(engine);
+      expect(room.pendingLeaveUserIds).toEqual(["h2"]);
+
+      const oldGeneration = handler["engineGeneration"].get(room.id)!;
+      await handler["handleHandEnd"](room, oldGeneration);
+      const nextEngine = handler["engines"].get(room.id)!;
+      expect(nextEngine).not.toBe(engine);
+      expect(
+        nextEngine.getState().players.map((player) => player.userId),
+      ).not.toContain("h2");
+
+      await handler["handleHandEnd"](room, oldGeneration);
+      expect(handler["engines"].get(room.id)).toBe(nextEngine);
+    });
+
+    it("does not pause the remaining humans when the leaver has zero chips", async () => {
+      await startPlayingWithHumans();
+      const engine = handler["engines"].get(room.id)!;
+      const seat = room.findSeatByUserId("h2")!;
+      seat.chips = 0;
+      seat.confirmed = false;
+      room.autoResume = true;
+      engine.getState().phase = "settled";
+
+      await handler.handleMessage("h2", "bob", "room:leave", {});
+      await handler["handleHandEnd"](
+        room,
+        handler["engineGeneration"].get(room.id)!,
+      );
+
+      expect(room.status).toBe("playing");
+      expect(room.autoResume).toBe(false);
+      expect(room.findSeatByUserId("h2")).toBeUndefined();
+    });
+  });
+
   // ----------------------------------------------------------------
   // Hand boundary: AI rebuy / pure-AI dissolve / rebuild
   // ----------------------------------------------------------------
@@ -425,6 +581,10 @@ describe("lobby AI lifecycle", () => {
       vi.mocked(addPoints).mockClear();
 
       await handler.handleMessage("h1", "alice", "room:leave", {});
+      await handler["handleHandEnd"](
+        room,
+        handler["engineGeneration"].get(room.id)!,
+      );
 
       expect(room.playerCount).toBe(0);
       expect(addPoints).toHaveBeenCalledWith(aiId, expect.any(Number));

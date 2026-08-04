@@ -50,7 +50,7 @@ export class Room {
   entryOrder: string[] = [];
   // Set when the table pauses because a player busted; cleared when the game auto-resumes.
   autoResume = false;
-  // Players (AI) removed mid-hand; they leave once the current hand settles.
+  // Players removed mid-hand; they leave once the current hand settles.
   pendingLeaveUserIds: string[] = [];
   // Users watching the table without occupying a seat.
   spectators: Spectator[] = [];
@@ -297,10 +297,29 @@ export class Room {
     seat.isAi = false;
     seat.buyInHoldOperationId = null;
     this.entryOrder = this.entryOrder.filter((id) => id !== userId);
+    this.pendingLeaveUserIds = this.pendingLeaveUserIds.filter(
+      (id) => id !== userId,
+    );
     if (this.hostId === userId) {
       this.hostId = this.entryOrder[0] ?? null;
     }
     return chips;
+  }
+
+  queuePendingLeave(userId: string): boolean {
+    if (!this.findSeatByUserId(userId)) return false;
+    if (!this.pendingLeaveUserIds.includes(userId)) {
+      this.pendingLeaveUserIds.push(userId);
+    }
+    return true;
+  }
+
+  markManualLeave(userId: string): boolean {
+    const seat = this.findSeatByUserId(userId);
+    if (!seat) return false;
+    seat.connected = false;
+    seat.autoManaged = false;
+    return this.queuePendingLeave(userId);
   }
 
   confirmBuyIn(userId: string, amount: number) {

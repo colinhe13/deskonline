@@ -194,7 +194,13 @@ export class LobbyHandler {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
     const seat = room.findSeatByUserId(userId);
-    if (!seat || !seat.connected || seat.autoManaged) return;
+    if (
+      !seat ||
+      !seat.connected ||
+      seat.autoManaged ||
+      room.pendingLeaveUserIds.includes(userId)
+    )
+      return;
     const engine = this.engines.get(room.id);
     if (!engine) return;
 
@@ -205,6 +211,7 @@ export class LobbyHandler {
   private async handleRevealCards(userId: string) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
+    if (room.pendingLeaveUserIds.includes(userId)) return;
     const engine = this.engines.get(room.id);
     if (!engine) return;
     engine.revealCards(userId);
@@ -566,8 +573,14 @@ export class LobbyHandler {
       const seat = room.findSeatByUserId(uid);
       if (seat) {
         const chips = seat.chips;
+        const holdOperationId = seat.buyInHoldOperationId;
+        if (holdOperationId) {
+          const settled = await settleBuyInHold(holdOperationId, chips);
+          if (!settled) throw new Error("HOLD_SETTLEMENT_FAILED");
+        } else if (chips > 0) {
+          await addPoints(uid, chips);
+        }
         room.removePlayer(uid);
-        if (chips > 0) await addPoints(uid, chips);
       }
     }
     room.pendingLeaveUserIds = [];
@@ -705,10 +718,10 @@ export class LobbyHandler {
 
     this.destroyEngine(room);
     await this.settleManagedDisconnectedPlayers(room);
+    await this.settleSeatChanges(room);
     if (!room.humanSeats().some((seat) => !seat.confirmed)) {
       room.autoResume = false;
     }
-    await this.settleSeatChanges(room);
     if (room.seats.some((seat) => seat.buyInHoldOperationId)) {
       await this.settleActiveHolds(room);
     }
@@ -797,6 +810,13 @@ export class LobbyHandler {
 
     const existing = roomManager.findRoomByPlayer(userId);
     if (existing) {
+      if (existing.pendingLeaveUserIds.includes(userId)) {
+        this.gateway.sendToUser(userId, "room:error", {
+          code: "LEAVE_PENDING",
+          message: "当前牌局结束后才能重新入桌",
+        });
+        return;
+      }
       this.gateway.sendToUser(userId, "room:error", {
         code: "ALREADY_IN_ROOM",
         message: "你已在房间中",
@@ -1487,6 +1507,18 @@ export class LobbyHandler {
 
     this.clearSeatDisconnectTimer(userId);
     this.gateway.sendToUser(userId, "voice:disconnect", {});
+
+    const engine = this.engines.get(room.id);
+    if (room.status === "playing" && engine) {
+      if (room.markManualLeave(userId)) {
+        engine.foldPlayer(userId);
+        room.broadcast(this.gateway, "room:state", {
+          room: room.toDetail(),
+        });
+      }
+      return;
+    }
+
     await this.ejectPlayer(room, userId);
   }
 
@@ -1583,6 +1615,11 @@ export class LobbyHandler {
 
     const seat = room.findSeatByUserId(userId);
     if (!seat) return;
+    if (room.pendingLeaveUserIds.includes(userId)) {
+      room.markDisconnected(userId);
+      room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+      return;
+    }
     if (seat.connected) {
       room.markDisconnected(userId);
       this.scheduleSeatDisconnect(room, userId);
@@ -1668,9 +1705,7 @@ export class LobbyHandler {
 
     if (room.status === "playing") {
       // Mid-hand removal takes effect once the current hand settles.
-      if (!room.pendingLeaveUserIds.includes(targetId!)) {
-        room.pendingLeaveUserIds.push(targetId!);
-      }
+      room.queuePendingLeave(targetId!);
       room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
       return;
     }
@@ -1698,6 +1733,12 @@ export class LobbyHandler {
   private async handleReconnect(userId: string, username: string) {
     const room = roomManager.findRoomByPlayer(userId);
     if (room) {
+      if (room.pendingLeaveUserIds.includes(userId)) {
+        this.gateway.sendToUser(userId, "reconnect:failed", {
+          reason: "LEAVE_PENDING",
+        });
+        return;
+      }
       this.clearSeatDisconnectTimer(userId);
       this.clearPendingDisconnectTimer(userId);
       room.markReconnected(userId);
