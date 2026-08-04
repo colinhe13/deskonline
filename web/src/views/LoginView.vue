@@ -56,15 +56,23 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 
 const auth = useAuthStore();
+const route = useRoute();
 const username = ref("");
 const password = ref("");
 const registerCode = ref("");
 const isRegister = ref(false);
 const loading = ref(false);
-const error = ref("");
+const error = ref(
+  route.query.reason === "replaced"
+    ? "账号已在其他设备登录"
+    : route.query.reason === "invalid"
+      ? "登录状态已失效，请重新登录"
+      : "",
+);
 
 async function handleSubmit() {
   error.value = "";

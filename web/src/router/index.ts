@@ -29,10 +29,16 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const token = localStorage.getItem("token");
+  const forcedLogout =
+    typeof sessionStorage !== "undefined" &&
+    sessionStorage.getItem("auth:forced-logout") === "1";
+  if (forcedLogout && to.name !== "login") {
+    return { name: "login", query: { reason: "replaced" } };
+  }
   if (to.meta.requiresAuth && !token) {
     return { name: "login" };
   }
-  if (to.name === "login" && token) {
+  if (to.name === "login" && token && !forcedLogout) {
     return { name: "lobby" };
   }
 });

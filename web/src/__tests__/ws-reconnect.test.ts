@@ -109,4 +109,37 @@ describe("useWebSocket 快照恢复（刷新/直接访问/断线重连）", () =
     expect(sentTypes(second)).toEqual(["reconnect"]);
     ws.disconnect();
   });
+
+  it("被新设备替换后不再自动重连并通知认证失效", async () => {
+    const events: { reason: string; token: string }[] = [];
+    const ws = useWebSocket();
+    const off = ws.onSessionInvalidated((event) => events.push(event));
+    ws.connect();
+    const first = MockWebSocket.instances[0];
+    first.open();
+    first.readyState = MockWebSocket.CLOSED;
+    first.onclose?.({ code: 4002 });
+
+    await new Promise((r) => setTimeout(r, 1100));
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(ws.isReconnecting.value).toBe(false);
+    expect(events).toEqual([{ reason: "replaced", token: "test-token" }]);
+    off();
+  });
+
+  it("旧 socket 的迟到 close 不会清空新 socket", () => {
+    const ws = useWebSocket();
+    ws.connect();
+    const first = MockWebSocket.instances[0];
+    first.open();
+    ws.disconnect();
+
+    ws.connect();
+    const second = MockWebSocket.instances[1];
+    second.open();
+    first.onclose?.({ code: 4002 });
+
+    expect(ws.isOpen()).toBe(true);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
 });

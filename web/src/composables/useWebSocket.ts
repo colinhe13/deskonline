@@ -3,6 +3,13 @@ import type { ServerMessage } from "../types/protocol";
 
 type MessageHandler = (payload: unknown) => void;
 
+export type SessionInvalidation = {
+  reason: "replaced" | "invalid";
+  token: string;
+};
+
+type SessionInvalidationHandler = (event: SessionInvalidation) => void;
+
 const isConnected = ref(false);
 const isReconnecting = ref(false);
 let ws: WebSocket | null = null;
@@ -10,10 +17,27 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 let intentionalClose = false;
 const handlers = new Map<string, Set<MessageHandler>>();
+const sessionInvalidationHandlers = new Set<SessionInvalidationHandler>();
 
 const MAX_RECONNECT_DELAY = 15_000;
+const TERMINAL_CLOSE_CODES = new Set([4001, 4002]);
 
 export function useWebSocket() {
+  function clearReconnectState() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectAttempts = 0;
+    isReconnecting.value = false;
+  }
+
+  function notifySessionInvalidated(event: SessionInvalidation) {
+    for (const handler of [...sessionInvalidationHandlers]) {
+      handler(event);
+    }
+  }
+
   function connect() {
     if (
       ws &&
@@ -30,10 +54,11 @@ export function useWebSocket() {
     const base =
       import.meta.env.VITE_WS_BASE || import.meta.env.VITE_API_BASE || "";
     const wsUrl = base.replace(/^http/, "ws") + `/ws?token=${token}`;
+    const socket = new WebSocket(wsUrl);
+    ws = socket;
 
-    ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
+    socket.onopen = () => {
+      if (ws !== socket) return;
       isConnected.value = true;
       // Always request a full snapshot on connect — covers WS drop-reconnect,
       // page refresh and direct URL entry. Server-side is idempotent: users
@@ -43,7 +68,8 @@ export function useWebSocket() {
       isReconnecting.value = false;
     };
 
-    ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (ws !== socket) return;
       try {
         const msg: ServerMessage = JSON.parse(event.data);
         const msgHandlers = handlers.get(msg.type);
@@ -57,16 +83,29 @@ export function useWebSocket() {
       }
     };
 
-    ws.onclose = (event) => {
-      isConnected.value = false;
+    socket.onclose = (event) => {
+      // A late close from a replaced socket must not affect the new socket.
+      if (ws !== socket) return;
       ws = null;
-      if (!intentionalClose && event.code !== 4001) {
+      isConnected.value = false;
+
+      if (TERMINAL_CLOSE_CODES.has(event.code)) {
+        intentionalClose = true;
+        clearReconnectState();
+        notifySessionInvalidated({
+          reason: event.code === 4002 ? "replaced" : "invalid",
+          token,
+        });
+        return;
+      }
+
+      if (!intentionalClose) {
         scheduleReconnect();
       }
     };
 
-    ws.onerror = () => {
-      ws?.close();
+    socket.onerror = () => {
+      socket.close();
     };
   }
 
@@ -86,14 +125,10 @@ export function useWebSocket() {
 
   function disconnect() {
     intentionalClose = true;
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    reconnectAttempts = 0;
-    isReconnecting.value = false;
-    ws?.close(1000);
+    clearReconnectState();
+    const current = ws;
     ws = null;
+    current?.close(1000);
     isConnected.value = false;
   }
 
@@ -116,6 +151,11 @@ export function useWebSocket() {
 
   function offMessage(type: string, handler: MessageHandler) {
     handlers.get(type)?.delete(handler);
+  }
+
+  function onSessionInvalidated(handler: SessionInvalidationHandler) {
+    sessionInvalidationHandlers.add(handler);
+    return () => sessionInvalidationHandlers.delete(handler);
   }
 
   function handleVisibilityChange() {
@@ -142,5 +182,6 @@ export function useWebSocket() {
     isOpen,
     onMessage,
     offMessage,
+    onSessionInvalidated,
   };
 }
