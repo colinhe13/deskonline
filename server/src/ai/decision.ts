@@ -12,8 +12,26 @@ export interface AiAction {
 
 const decisionSchema = z.object({
   action: z.enum(["fold", "check", "call", "raise", "allin"]),
-  amount: z.number().int().nonnegative().optional(),
+  amount: z.number().finite().optional(),
 });
+
+// The model occasionally emits common synonyms instead of the exact action
+// vocabulary; map them instead of rejecting the whole decision.
+const ACTION_ALIASES: Record<string, string> = {
+  bet: "raise",
+  "all-in": "allin",
+  all_in: "allin",
+};
+
+function normalizeRaw(raw: Record<string, unknown>): Record<string, unknown> {
+  const action =
+    typeof raw.action === "string"
+      ? raw.action.trim().toLowerCase()
+      : raw.action;
+  const mapped =
+    typeof action === "string" ? (ACTION_ALIASES[action] ?? action) : action;
+  return mapped === raw.action ? raw : { ...raw, action: mapped };
+}
 
 // Guaranteed-legal default: check when possible, otherwise fold.
 export function fallbackAction(availableActions: ActionOption[]): AiAction {
@@ -90,14 +108,27 @@ export async function decideAiAction(
     if (!raw) return finish(fallback, "fallback", "no_response");
 
     const rawStr = JSON.stringify(raw);
-    const parsed = decisionSchema.safeParse(raw);
+    const parsed = decisionSchema.safeParse(normalizeRaw(raw));
     if (!parsed.success) return finish(fallback, "fallback", "schema", rawStr);
 
     const { action } = parsed.data;
     let { amount } = parsed.data;
 
-    // The engine ignores the allin amount but validation requires one.
-    if (action === "allin" && amount === undefined) {
+    if (action === "raise") {
+      // Clamp an off-target amount into the legal window instead of
+      // discarding the model's aggressive intent into a fold.
+      const opt = availableActions.find((a) => a.type === "raise");
+      if (!opt) return finish(fallback, "fallback", "illegal", rawStr);
+      const lo = opt.min ?? 0;
+      const hi = opt.max ?? lo;
+      amount =
+        amount === undefined || !Number.isFinite(amount)
+          ? lo
+          : Math.min(Math.max(Math.round(amount), lo), hi);
+    }
+
+    // Allin never validates the model's amount; the engine uses the full stack.
+    if (action === "allin") {
       amount = availableActions.find((a) => a.type === "allin")?.amount;
     }
 

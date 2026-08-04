@@ -109,14 +109,59 @@ describe("decideAiAction", () => {
     });
   });
 
-  it("falls back when the raise amount is out of bounds", async () => {
+  it("clamps an out-of-bounds raise amount into the legal window", async () => {
     vi.mocked(callLlm).mockResolvedValue({ action: "raise", amount: 1 }); // min 2
     await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
-      action: "check",
+      action: "raise",
+      amount: 2,
     });
     vi.mocked(callLlm).mockResolvedValue({ action: "raise", amount: 500 }); // max 100
     await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
-      action: "check",
+      action: "raise",
+      amount: 100,
+    });
+  });
+
+  it("defaults the raise amount to the minimum when omitted", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "raise" });
+    await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
+      action: "raise",
+      amount: 2,
+    });
+  });
+
+  it("rounds a fractional raise amount", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "raise", amount: 7.6 });
+    await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
+      action: "raise",
+      amount: 8,
+    });
+  });
+
+  it("maps the bet alias to raise", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "bet", amount: 10 });
+    await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
+      action: "raise",
+      amount: 10,
+    });
+  });
+
+  it("maps allin spelling variants", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "all-in" });
+    await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
+      action: "allin",
+      amount: 100,
+    });
+  });
+
+  it("falls back when raise is requested but unavailable", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "raise", amount: 10 });
+    const noRaise: ActionOption[] = [
+      { type: "fold" },
+      { type: "call", amount: 4 },
+    ];
+    await expect(decideAiAction(state(), "ai1", noRaise)).resolves.toEqual({
+      action: "fold",
     });
   });
 
@@ -128,10 +173,11 @@ describe("decideAiAction", () => {
     });
   });
 
-  it("falls back when the LLM returns a zero allin amount", async () => {
+  it("ignores a bogus allin amount and uses the full stack", async () => {
     vi.mocked(callLlm).mockResolvedValue({ action: "allin", amount: 0 });
     await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
-      action: "check",
+      action: "allin",
+      amount: 100,
     });
   });
 
