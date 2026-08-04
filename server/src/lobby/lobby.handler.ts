@@ -224,7 +224,12 @@ export class LobbyHandler {
     try {
       const handName = engine.getRevealedHandName(userId);
       if (handName && !isAiUserId(userId)) {
-        profileStore.attachReveal(room.id, userId, handName);
+        profileStore.attachReveal(
+          room.id,
+          userId,
+          handName,
+          engine.getState().handNumber,
+        );
       }
     } catch (err) {
       // Profiling must never disturb the reveal broadcast.
@@ -592,8 +597,12 @@ export class LobbyHandler {
     engine: PokerEngine,
     result: HandResult,
   ) {
-    const record = buildHandRecord(engine.getHandHistory(), result);
     const state = engine.getState();
+    const record = buildHandRecord(
+      engine.getHandHistory(),
+      result,
+      state.handNumber,
+    );
     for (const p of state.players) {
       if (isAiUserId(p.userId)) continue;
       profileStore.recordHand(room.id, p.userId, p.username, record);

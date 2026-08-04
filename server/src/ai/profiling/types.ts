@@ -8,6 +8,8 @@ export interface HandRecord {
   // HandResult.handNames at showdown, extended later by voluntary reveals.
   // Never raw card faces.
   revealedHandNames: Record<string, string>;
+  // Guards attachReveal: a reveal must only extend the hand it belongs to.
+  handNumber: number;
 }
 
 // Raw counters; all rates are derived on read to avoid float drift.

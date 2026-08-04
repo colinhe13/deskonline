@@ -69,6 +69,7 @@ import {
 import { callLlm } from "../ai/llm.client.js";
 import { decideAiAction } from "../ai/decision.js";
 import { ensureAiAccounts, resetAiStateForTests } from "../ai/accounts.js";
+import { profileStore } from "../ai/profiling/store.js";
 import { LobbyHandler, SETTLEMENT_WINDOW_MS } from "../lobby/lobby.handler.js";
 import { roomManager } from "../lobby/room.manager.js";
 import { Room } from "../lobby/room.js";
@@ -148,6 +149,8 @@ describe("lobby AI lifecycle", () => {
     handler = new LobbyHandler(gateway as never);
     room = roomManager.getRoom("main")!;
     resetRoom(room);
+    profileStore.clearRoom(room.id);
+    deckRig.cards = null;
     handler["engines"].clear();
     handler["aiPending"].clear();
     handler["engineGeneration"].clear();
@@ -165,6 +168,8 @@ describe("lobby AI lifecycle", () => {
     handler["seatDisconnectTimers"].forEach((timer) => clearTimeout(timer));
     handler["pendingDisconnectTimers"].forEach((timer) => clearTimeout(timer));
     handler["engines"].clear();
+    profileStore.clearRoom(room.id);
+    deckRig.cards = null;
     resetRoom(room);
   });
 
@@ -1099,6 +1104,111 @@ describe("lobby AI lifecycle", () => {
       expect(settleBuyInHold).toHaveBeenCalledWith("hold-h2", 234);
       expect(addPoints).not.toHaveBeenCalledWith("h2", expect.anything());
       expect(room.isSpectator("h2")).toBe(true);
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // Voluntary reveal → profiling collection
+  // ----------------------------------------------------------------
+
+  describe("reveal profiling", () => {
+    // Heads-up rigged hand: human flops a pair of aces, AI folds to the flop.
+    async function playFoldWinHandOnFlop() {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      room.status = "playing";
+      deckRig.cards = [
+        card("A", "spades"),
+        card("A", "clubs"), // h1 hole cards
+        card("7", "hearts"),
+        card("2", "diamonds"), // AI hole cards
+        card("9", "diamonds"),
+        card("4", "clubs"),
+        card("3", "spades"), // flop
+        card("K", "hearts"),
+        card("8", "spades"),
+      ];
+      handler["startEngine"](room);
+      deckRig.cards = null;
+      const engine = handler["engines"].get(room.id)!;
+
+      // Queue both AI decisions up front: the mocked LLM resolves instantly,
+      // so the flop phase is too short-lived to observe deterministically.
+      vi.mocked(callLlm).mockClear();
+      vi.mocked(callLlm)
+        .mockResolvedValueOnce({ action: "check" }) // preflop BB option
+        .mockResolvedValueOnce({ action: "fold" }); // flop BB folds
+
+      // Human (dealer/SB) completes; the AI folds the flop → human fold win
+      // with the flop dealt, so the revealed hand is evaluable.
+      engine.handleAction("h1", "call", 1);
+      await vi.waitFor(() => {
+        expect(engine.getState().phase).toBe("settled");
+      });
+      return engine;
+    }
+
+    it("attaches a human's voluntary reveal to the just-settled record", async () => {
+      const engine = await playFoldWinHandOnFlop();
+      gateway.sent.length = 0;
+
+      await handler.handleMessage("h1", "alice", "poker:reveal", {});
+
+      expect(
+        engine.getState().players.find((p) => p.userId === "h1")?.cardsRevealed,
+      ).toBe(true);
+      const records = profileStore.getRecentRecords(room.id, "h1");
+      expect(records).toHaveLength(1);
+      expect(records[0].revealedHandNames).toEqual({ h1: "一对 A" });
+    });
+
+    it("never records a reveal for AI players", async () => {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      room.status = "playing";
+      handler["startEngine"](room);
+      const engine = handler["engines"].get(room.id)!;
+
+      // Human folds preflop → AI wins by fold and auto-reveals.
+      engine.handleAction("h1", "fold");
+      await vi.waitFor(() => {
+        expect(engine.getState().phase).toBe("settled");
+      });
+      const aiId = room.aiSeats()[0]!.userId!;
+      expect(
+        engine.getState().players.find((p) => p.userId === aiId)?.cardsRevealed,
+      ).toBe(true);
+
+      expect(profileStore.getRecentRecords(room.id, aiId)).toHaveLength(0);
+      const humanRecords = profileStore.getRecentRecords(room.id, "h1");
+      expect(humanRecords).toHaveLength(1);
+      expect(humanRecords[0].revealedHandNames).toEqual({});
+    });
+
+    it("keeps broadcasting the reveal even when profiling throws", async () => {
+      const engine = await playFoldWinHandOnFlop();
+      const spy = vi
+        .spyOn(engine, "getRevealedHandName")
+        .mockImplementation(() => {
+          throw new Error("boom");
+        });
+      gateway.sent.length = 0;
+
+      await handler.handleMessage("h1", "alice", "poker:reveal", {});
+
+      // The reveal broadcast (per-player poker:update) still went out.
+      expect(
+        gateway.sent.some(
+          (m) => m.type === "poker:update" && m.userId === "h1",
+        ),
+      ).toBe(true);
+      expect(
+        engine.getState().players.find((p) => p.userId === "h1")?.cardsRevealed,
+      ).toBe(true);
+      expect(
+        profileStore.getRecentRecords(room.id, "h1")[0].revealedHandNames,
+      ).toEqual({});
+      spy.mockRestore();
     });
   });
 

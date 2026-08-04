@@ -21,6 +21,7 @@ function record(userId: string): HandRecord {
     winners: [{ userId, amount: 6 }],
     showdownParticipantIds: [],
     revealedHandNames: {},
+    handNumber: 1,
   };
 }
 
@@ -110,15 +111,24 @@ describe("ProfileStore", () => {
     it("writes the hand name into the user's most recent record only", () => {
       store.recordHand("room1", "u1", "alice", record("u1"));
       store.recordHand("room1", "u1", "alice", record("u1"));
-      store.attachReveal("room1", "u1", "高牌 A");
+      store.attachReveal("room1", "u1", "高牌 A", 1);
       const records = store.getRecentRecords("room1", "u1");
       expect(records[1].revealedHandNames).toEqual({ u1: "高牌 A" });
       expect(records[0].revealedHandNames).toEqual({});
     });
 
+    it("refuses to write when the last record belongs to an earlier hand", () => {
+      const older = record("u1");
+      older.handNumber = 3;
+      store.recordHand("room1", "u1", "alice", older);
+      // Collection failed for hand 4; the reveal must not pollute hand 3.
+      store.attachReveal("room1", "u1", "高牌 A", 4);
+      expect(older.revealedHandNames).toEqual({});
+    });
+
     it("is a no-op when the user has no records", () => {
       expect(() =>
-        store.attachReveal("room1", "ghost", "一对 K"),
+        store.attachReveal("room1", "ghost", "一对 K", 1),
       ).not.toThrow();
       expect(store.getRecentRecords("room1", "ghost")).toHaveLength(0);
     });
@@ -127,7 +137,7 @@ describe("ProfileStore", () => {
       const shared = record("u1");
       store.recordHand("room1", "u1", "alice", shared);
       store.recordHand("room1", "u2", "bob", shared);
-      store.attachReveal("room1", "u1", "两对 K 和 9");
+      store.attachReveal("room1", "u1", "两对 K 和 9", 1);
       expect(
         store.getRecentRecords("room1", "u2")[0].revealedHandNames,
       ).toEqual({

@@ -5,6 +5,7 @@ import type { HandRecord } from "./types.js";
 export function buildHandRecord(
   history: StructuredAction[],
   result: HandResult,
+  handNumber: number,
 ): HandRecord {
   return {
     actions: [...history],
@@ -15,5 +16,6 @@ export function buildHandRecord(
     showdownParticipantIds: Object.keys(result.showdownCards),
     // Hand names are already public at showdown; raw card faces stay excluded.
     revealedHandNames: { ...result.handNames },
+    handNumber,
   };
 }

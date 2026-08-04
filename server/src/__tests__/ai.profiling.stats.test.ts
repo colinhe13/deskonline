@@ -26,40 +26,50 @@ function record(
     winners: extra?.winners ?? [{ userId: "u1", amount: 6 }],
     showdownParticipantIds: extra?.showdownParticipantIds ?? [],
     revealedHandNames: extra?.revealedHandNames ?? {},
+    handNumber: extra?.handNumber ?? 1,
   };
 }
 
 describe("buildHandRecord", () => {
   it("copies history and derives showdown participants from result", () => {
     const history = [action("preflop", "u1", "blind", 1)];
-    const rec = buildHandRecord(history, {
-      winners: [{ userId: "u2", amount: 10 }],
-      refunds: [],
-      showdownCards: {
-        u1: [{ suit: "hearts", rank: "A" }],
-        u2: [{ suit: "clubs", rank: "K" }],
+    const rec = buildHandRecord(
+      history,
+      {
+        winners: [{ userId: "u2", amount: 10 }],
+        refunds: [],
+        showdownCards: {
+          u1: [{ suit: "hearts", rank: "A" }],
+          u2: [{ suit: "clubs", rank: "K" }],
+        },
+        handNames: { u1: "高牌 A", u2: "一对 K" },
+        reason: "showdown",
       },
-      handNames: { u1: "高牌 A", u2: "一对 K" },
-      reason: "showdown",
-    });
+      7,
+    );
     expect(rec.actions).toEqual(history);
     expect(rec.actions).not.toBe(history);
     expect(rec.winners).toEqual([{ userId: "u2", amount: 10 }]);
     expect(rec.showdownParticipantIds.sort()).toEqual(["u1", "u2"]);
     expect(rec.revealedHandNames).toEqual({ u1: "高牌 A", u2: "一对 K" });
+    expect(rec.handNumber).toBe(7);
     // Hand names only; raw card faces never enter the profile record.
     expect(JSON.stringify(rec)).not.toMatch(/[2-9TJQKA][hdcs]\b/);
     expect(JSON.stringify(rec)).not.toMatch(/hearts|clubs|diamonds|spades/);
   });
 
   it("leaves revealedHandNames empty on a fold win", () => {
-    const rec = buildHandRecord([action("preflop", "u1", "blind", 1)], {
-      winners: [{ userId: "u1", amount: 3 }],
-      refunds: [],
-      showdownCards: {},
-      handNames: {},
-      reason: "fold",
-    });
+    const rec = buildHandRecord(
+      [action("preflop", "u1", "blind", 1)],
+      {
+        winners: [{ userId: "u1", amount: 3 }],
+        refunds: [],
+        showdownCards: {},
+        handNames: {},
+        reason: "fold",
+      },
+      1,
+    );
     expect(rec.revealedHandNames).toEqual({});
   });
 });
