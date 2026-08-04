@@ -16,4 +16,9 @@ export const config = {
   aiApiKey: process.env.AI_API_KEY || "",
   aiTimeoutMs: parseInt(process.env.AI_TIMEOUT_MS || "10000", 10),
   aiAccounts: process.env.AI_ACCOUNTS || "AI_XiaoZhi,AI_LaoWang,AI_MeiLing",
+  aiProfileMinHands: parseInt(process.env.AI_PROFILE_MIN_HANDS || "5", 10),
+  aiProfileSummaryEvery: parseInt(
+    process.env.AI_PROFILE_SUMMARY_EVERY || "5",
+    10,
+  ),
 };
