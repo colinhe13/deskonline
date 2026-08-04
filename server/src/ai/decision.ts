@@ -3,6 +3,7 @@ import { GameState, ActionOption, PlayerActionType } from "../poker/types.js";
 import { buildDecisionContext, GTO_SYSTEM_PROMPT } from "./prompt.js";
 import { callLlm } from "./llm.client.js";
 import { config } from "../config.js";
+import { recordAiDecision, AiFailReason } from "./stats.js";
 
 export interface AiAction {
   action: PlayerActionType;
@@ -49,6 +50,28 @@ export async function decideAiAction(
   availableActions: ActionOption[],
 ): Promise<AiAction> {
   const fallback = fallbackAction(availableActions);
+  const me = state.players.find((p) => p.userId === userId);
+  const meta = {
+    username: me?.username ?? userId,
+    phase: state.phase,
+    handNo: state.handNumber,
+    toCall: me ? Math.max(0, state.currentBet - me.bet) : 0,
+  };
+  const finish = (
+    result: AiAction,
+    source: "llm" | "fallback",
+    failReason?: AiFailReason,
+    llmRaw?: string,
+  ): AiAction => {
+    recordAiDecision({
+      ...meta,
+      source,
+      failReason,
+      llmRaw,
+      finalAction: result.action,
+    });
+    return result;
+  };
 
   try {
     const context = buildDecisionContext(state, userId);
@@ -64,10 +87,11 @@ export async function decideAiAction(
       timeout,
     ]);
     if (timer) clearTimeout(timer);
-    if (!raw) return fallback;
+    if (!raw) return finish(fallback, "fallback", "no_response");
 
+    const rawStr = JSON.stringify(raw);
     const parsed = decisionSchema.safeParse(raw);
-    if (!parsed.success) return fallback;
+    if (!parsed.success) return finish(fallback, "fallback", "schema", rawStr);
 
     const { action } = parsed.data;
     let { amount } = parsed.data;
@@ -77,10 +101,11 @@ export async function decideAiAction(
       amount = availableActions.find((a) => a.type === "allin")?.amount;
     }
 
-    if (!isActionAllowed(availableActions, action, amount)) return fallback;
+    if (!isActionAllowed(availableActions, action, amount))
+      return finish(fallback, "fallback", "illegal", rawStr);
 
-    return { action, amount };
+    return finish({ action, amount }, "llm", undefined, rawStr);
   } catch {
-    return fallback;
+    return finish(fallback, "fallback", "error");
   }
 }

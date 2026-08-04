@@ -15,8 +15,9 @@ import { Room } from "./room.js";
 import { livekitService } from "../voice/livekit.service.js";
 import { isAiUserId, pickFreeAi } from "../ai/accounts.js";
 import { decideAiAction } from "../ai/decision.js";
+import { recordAiDecision } from "../ai/stats.js";
 import { config } from "../config.js";
-import { ActionOption } from "../poker/types.js";
+import { ActionOption, PlayerActionType } from "../poker/types.js";
 import {
   ChatMessage,
   MAX_CHAT_LENGTH,
@@ -383,7 +384,19 @@ export class LobbyHandler {
       if (st.phase === "showdown" || st.phase === "settled") return;
       if (!this.consumeAiPending(roomId, userId)) return;
       console.warn(`[ai] watchdog forcing fallback action for ${userId}`);
-      this.applyFallbackAction(eng, userId);
+      const applied = this.applyFallbackAction(eng, userId);
+      if (applied) {
+        const me = st.players.find((p) => p.userId === userId);
+        recordAiDecision({
+          username: me?.username ?? userId,
+          phase: st.phase,
+          handNo: st.handNumber,
+          toCall: me ? Math.max(0, st.currentBet - me.bet) : 0,
+          source: "watchdog",
+          failReason: "no_response",
+          finalAction: applied,
+        });
+      }
     }, config.aiTimeoutMs + 5000);
 
     decideAiAction(state, userId, engine.getAvailableActionsForPlayer(userId))
@@ -400,8 +413,10 @@ export class LobbyHandler {
         if (!cur || cur.userId !== userId) return;
 
         if (!eng.handleAction(userId, action, amount)) {
-          console.warn(`[ai] rejected action ${action}, applying fallback`);
-          this.applyFallbackAction(eng, userId);
+          const applied = this.applyFallbackAction(eng, userId);
+          console.warn(
+            `[ai] rejected action ${action}, applied fallback ${applied ?? "none"}`,
+          );
         }
       })
       .catch((err) => {
@@ -424,15 +439,19 @@ export class LobbyHandler {
 
   // check -> call -> fold -> allin: every branch is legal by construction,
   // so a fallback can never be rejected and stall the hand.
-  private applyFallbackAction(eng: PokerEngine, userId: string) {
+  private applyFallbackAction(
+    eng: PokerEngine,
+    userId: string,
+  ): PlayerActionType | undefined {
     const actions = eng.getAvailableActionsForPlayer(userId);
     const pick =
       actions.find((a) => a.type === "check") ||
       actions.find((a) => a.type === "call") ||
       actions.find((a) => a.type === "fold") ||
       actions.find((a) => a.type === "allin");
-    if (!pick) return;
+    if (!pick) return undefined;
     eng.handleAction(userId, pick.type, pick.amount);
+    return pick.type;
   }
 
   // ------------------------------------------------------------------
