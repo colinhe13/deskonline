@@ -26,7 +26,7 @@
       </div>
       <div class="seat-info">
         <span class="seat-name">
-          {{ seat.username }}
+          <span class="seat-username">{{ seat.username }}</span>
           <span v-if="isHost" class="host-badge">房主</span>
           <span v-if="seat.isAi" class="ai-badge">AI</span>
           <span v-if="isMe" class="me-badge">我</span>
@@ -228,6 +228,11 @@ const avatarStyle = computed(() => {
   align-items: center;
   gap: 3px;
   max-width: 100%;
+  min-width: 0;
+}
+.seat-username {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;

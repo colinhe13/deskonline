@@ -92,10 +92,11 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
   });
 
   it("PlayerSeat：AI 徽标与房主专属移除按钮", async () => {
+    const longName = "AI_ThisIsAVeryLongBotNameThatMustNotHideTheBadge";
     const aiSeat = {
       index: 1,
       userId: "ai1",
-      username: "AI_XiaoZhi",
+      username: longName,
       chips: 150,
       buyIn: 150,
       connected: true,
@@ -109,8 +110,8 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     };
     const asHostViewer = await render(PlayerSeat, {
       seat: aiSeat,
-      isHost: false,
-      isMe: false,
+      isHost: true,
+      isMe: true,
       isCurrent: false,
       isWinner: false,
       canRemoveAi: true,
@@ -118,6 +119,25 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(asHostViewer).toContain("ai-badge");
     expect(asHostViewer).toContain("AI");
     expect(asHostViewer).toContain("移除");
+    expect(asHostViewer).toContain("房主");
+    expect(asHostViewer).toContain("我");
+
+    // 对抗：长用户名必须包在独立 seat-username 容器中（省略号只作用于此），
+    // 且用户名在前、徽标在后，保证徽标不被用户名溢出挤掉。
+    const nameStart = asHostViewer.indexOf(longName);
+    expect(nameStart).toBeGreaterThan(-1);
+    expect(asHostViewer.indexOf('class="seat-username"')).toBeGreaterThan(-1);
+    expect(nameStart).toBeGreaterThan(
+      asHostViewer.indexOf('class="seat-username"'),
+    );
+    expect(asHostViewer.indexOf('class="host-badge"')).toBeGreaterThan(
+      nameStart,
+    );
+    expect(asHostViewer.indexOf('class="ai-badge"')).toBeGreaterThan(nameStart);
+    expect(asHostViewer.indexOf('class="me-badge"')).toBeGreaterThan(nameStart);
+    expect(asHostViewer.indexOf(longName) + longName.length).toBeLessThan(
+      asHostViewer.indexOf('class="ai-badge"'),
+    );
 
     const asRegularViewer = await render(PlayerSeat, {
       seat: aiSeat,

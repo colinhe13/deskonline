@@ -209,6 +209,10 @@ function seatStyle(index: number) {
 }
 
 @media (max-width: 768px) {
+  /* Keep compact-table seat information above the center card area. */
+  .seat-position {
+    z-index: 1;
+  }
   .table-felt {
     width: 94%;
     aspect-ratio: 1 / 1.05;
@@ -220,6 +224,8 @@ function seatStyle(index: number) {
       0 18px 40px rgba(0, 0, 0, 0.55);
   }
   .table-center {
+    z-index: 0;
+    transform: translate(-50%, calc(-50% + 8px));
     gap: 4px;
   }
   .table-id {
