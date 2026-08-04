@@ -66,21 +66,45 @@
       <button class="spectate-leave" @click="leaveRoom">退出观战</button>
     </div>
 
-    <p v-if="spectatorNames.length > 0" class="spectator-list">
-      观战者：{{ spectatorNames.join("、") }}
-    </p>
+    <SpectatorList
+      :spectators="game.room?.spectators ?? []"
+      :my-user-id="game.myUserId"
+    />
 
-    <main class="table-main">
-      <PokerTable
-        :room="game.room"
-        :poker-state="game.pokerState"
-        :my-user-id="game.myUserId"
-        :hand-result="game.handResult"
-        :is-viewer-host="isHost"
-        @sit="handleSitDown"
-        @remove-ai="removeAi"
-      />
-    </main>
+    <div class="table-body">
+      <main class="table-main">
+        <PokerTable
+          :room="game.room"
+          :poker-state="game.pokerState"
+          :my-user-id="game.myUserId"
+          :hand-result="game.handResult"
+          :is-viewer-host="isHost"
+          @sit="handleSitDown"
+          @remove-ai="removeAi"
+        />
+      </main>
+
+      <div class="chat-container" :class="{ open: chatOpen }">
+        <div class="chat-drawer-header">
+          <span>房间聊天</span>
+          <button class="chat-close" @click="chatOpen = false">收起</button>
+        </div>
+        <ChatPanel
+          class="chat-panel-slot"
+          :my-user-id="game.myUserId"
+          @send="sendChat"
+        />
+      </div>
+    </div>
+
+    <button
+      class="chat-toggle"
+      type="button"
+      :aria-expanded="chatOpen"
+      @click="chatOpen = !chatOpen"
+    >
+      聊天
+    </button>
 
     <ActionBar
       v-if="game.isMyTurn"
@@ -160,6 +184,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useGameStore } from "../stores/game";
+import { useChatStore } from "../stores/chat";
 import { useWebSocket } from "../composables/useWebSocket";
 import { VOICE_ENABLED } from "../utils/featureFlags";
 import PokerTable from "../components/table/PokerTable.vue";
@@ -168,6 +193,9 @@ import VoicePanel from "../components/voice/VoicePanel.vue";
 import ConfirmBuyIn from "../components/table/ConfirmBuyIn.vue";
 import RoomSettingsModal from "../components/table/RoomSettingsModal.vue";
 import TransferHostModal from "../components/table/TransferHostModal.vue";
+import SpectatorList from "../components/table/SpectatorList.vue";
+import ChatPanel from "../components/chat/ChatPanel.vue";
+import type { ChatMessage } from "../types/protocol";
 import type {
   RoomDetail,
   PokerState,
@@ -177,6 +205,7 @@ import type {
 
 const auth = useAuthStore();
 const game = useGameStore();
+const chatStore = useChatStore();
 const route = useRoute();
 const router = useRouter();
 const {
@@ -190,6 +219,7 @@ const {
 const showSettings = ref(false);
 const showTransfer = ref(false);
 const errorMsg = ref("");
+const chatOpen = ref(false);
 const revealedMine = ref(false);
 const selectedSeatForQueue = ref<number | null>(null);
 const queueSubmitting = ref(false);
@@ -206,12 +236,6 @@ const isSpectator = computed(
   () =>
     !!game.myUserId &&
     !!game.room?.spectators?.some((s) => s.userId === game.myUserId),
-);
-const spectatorNames = computed(
-  () =>
-    game.room?.spectators
-      ?.filter((s) => s.userId !== game.myUserId)
-      .map((s) => s.username) ?? [],
 );
 const canStart = computed(() => (game.room?.confirmedCount ?? 0) >= 2);
 const isRoomFull = computed(
@@ -270,11 +294,28 @@ function showError(message: string) {
 function handleRoomState(payload: unknown) {
   const p = payload as { room: RoomDetail | null; reason?: string };
   if (p.room) {
+    // Chat is real-time only: switching rooms starts a fresh transcript.
+    if (game.room?.id != null && game.room.id !== p.room.id) {
+      chatStore.clearMessages();
+    }
     game.setRoom(p.room);
   } else {
+    chatStore.clearMessages();
     game.setRoom(null);
     router.push("/lobby");
   }
+}
+
+function handleChatMessage(payload: unknown) {
+  const p = payload as { message?: ChatMessage };
+  if (p.message) {
+    chatStore.appendMessage(p.message);
+  }
+}
+
+function sendChat(text: string) {
+  chatStore.clearError();
+  send("room:chat:send", { text });
 }
 
 function handlePokerUpdate(payload: unknown) {
@@ -295,9 +336,13 @@ function handleHandResult(payload: unknown) {
 }
 
 function handleRoomError(payload: unknown) {
-  const p = payload as { message?: string };
+  const p = payload as { code?: string; message?: string };
   queueSubmitting.value = false;
   queueCancelling.value = false;
+  if (p.code === "CHAT_EMPTY" || p.code === "CHAT_TOO_LONG") {
+    chatStore.setError(p.message || "发送失败");
+    return;
+  }
   showError(p.message || "操作失败");
 }
 
@@ -361,6 +406,7 @@ function handleSitDown(seatIndex: number) {
 
 function leaveRoom() {
   send("room:leave", {});
+  chatStore.clearMessages();
   game.setRoom(null);
   router.push("/lobby");
 }
@@ -409,6 +455,7 @@ onMounted(() => {
   onMessage("poker:update", handlePokerUpdate);
   onMessage("poker:hand_result", handleHandResult);
   onMessage("room:error", handleRoomError);
+  onMessage("room:chat:message", handleChatMessage);
   onMessage("reconnect:success", handleReconnectSuccess);
   onMessage("reconnect:failed", handleReconnectFailed);
   onMessage("room:queue-join:accepted", handleQueueJoinAccepted);
@@ -426,6 +473,7 @@ onUnmounted(() => {
   offMessage("poker:update", handlePokerUpdate);
   offMessage("poker:hand_result", handleHandResult);
   offMessage("room:error", handleRoomError);
+  offMessage("room:chat:message", handleChatMessage);
   offMessage("reconnect:success", handleReconnectSuccess);
   offMessage("reconnect:failed", handleReconnectFailed);
   offMessage("room:queue-join:accepted", handleQueueJoinAccepted);
@@ -584,12 +632,31 @@ onUnmounted(() => {
   opacity: 0.55;
   cursor: wait;
 }
-.spectator-list {
-  text-align: center;
-  color: var(--text-faint);
-  font-size: var(--fs-xs);
-  padding: 0.25rem 1rem 0;
-  margin: 0;
+.table-body {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+}
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  flex-shrink: 0;
+  min-height: 240px;
+  max-height: calc(100dvh - 9rem);
+  align-self: flex-end;
+  margin: 0 0.75rem 0.75rem 0;
+}
+.chat-panel-slot {
+  flex: 1;
+  min-height: 0;
+}
+.chat-drawer-header {
+  display: none;
+}
+.chat-toggle {
+  display: none;
 }
 .table-main {
   flex: 1;
@@ -602,6 +669,69 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .table-main {
     padding-bottom: 100px;
+  }
+  .chat-container {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 50dvh;
+    max-height: 50dvh;
+    margin: 0;
+    z-index: var(--z-chat);
+    display: none;
+    border-radius: 0;
+    background: rgba(10, 28, 18, 0.96);
+    border: none;
+    border-top: 1px solid var(--glass-border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .chat-container.open {
+    display: flex;
+  }
+  .chat-container :deep(.chat-panel) {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .chat-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.45rem 0.75rem;
+    color: var(--text);
+    font-size: var(--fs-sm);
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .chat-close {
+    padding: 0.3rem 0.8rem;
+    min-height: 36px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-xs);
+    cursor: pointer;
+  }
+  .chat-toggle {
+    display: block;
+    position: fixed;
+    right: 0.9rem;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    z-index: var(--z-chat);
+    padding: 0.55rem 1rem;
+    min-height: 44px;
+    background: linear-gradient(160deg, var(--gold), var(--gold-strong));
+    color: #1c1304;
+    font-weight: 600;
+    font-size: var(--fs-sm);
+    border: none;
+    border-radius: var(--radius-pill);
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
   }
   .table-header {
     padding: 0.55rem 0.75rem;

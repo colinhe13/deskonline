@@ -42,6 +42,7 @@
 
   /* z-index 分层 */
   --z-actionbar: 40;
+  --z-chat: 45;
   --z-banner: 45;
   --z-reconnect: 60;
   --z-toast: 70;
