@@ -6,7 +6,10 @@ vi.mock("../ai/llm.client.js", () => ({
 
 import { callLlm } from "../ai/llm.client.js";
 import { ProfileStore } from "../ai/profiling/store.js";
-import { summarizeOpponent } from "../ai/profiling/summarizer.js";
+import {
+  NOTE_MAX_CHARS,
+  summarizeOpponent,
+} from "../ai/profiling/summarizer.js";
 import type { HandRecord } from "../ai/profiling/types.js";
 import { config } from "../config.js";
 
@@ -183,10 +186,10 @@ describe("summarizeOpponent", () => {
     );
   });
 
-  it("truncates notes to 120 chars", async () => {
-    mockedCallLlm.mockResolvedValue({ summary: "紧".repeat(200) });
+  it("truncates notes to the max length", async () => {
+    mockedCallLlm.mockResolvedValue({ summary: "紧".repeat(300) });
     const note = await summarizeOpponent(profile, [record("u1")]);
-    expect(note?.length).toBe(120);
+    expect(note?.length).toBe(NOTE_MAX_CHARS);
   });
 
   it("returns null when the LLM call fails", async () => {
