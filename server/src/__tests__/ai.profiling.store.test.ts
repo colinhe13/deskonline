@@ -193,4 +193,30 @@ describe("summarizeOpponent", () => {
     const userContent = mockedCallLlm.mock.calls[0][1];
     expect(userContent).not.toMatch(/[2-9TJQKA][hdcs]\b/);
   });
+
+  it("includes revealed hand names but never card faces in the input", async () => {
+    mockedCallLlm.mockResolvedValue({ summary: "ok" });
+    const foldWinReveal = record("u1");
+    foldWinReveal.revealedHandNames = { u1: "高牌 A" };
+    const showdownLoss = record("u1");
+    showdownLoss.winners = [{ userId: "u2", amount: 10 }];
+    showdownLoss.showdownParticipantIds = ["u1", "u2"];
+    showdownLoss.revealedHandNames = { u1: "两对 K 和 9", u2: "顺子" };
+    const unrevealed = record("u1");
+    unrevealed.winners = [{ userId: "u2", amount: 6 }];
+
+    await summarizeOpponent(profile, [
+      foldWinReveal,
+      showdownLoss,
+      unrevealed,
+    ]);
+    const userContent = mockedCallLlm.mock.calls[0][1];
+    expect(userContent).toContain("won 6，亮牌：高牌 A");
+    expect(userContent).toContain("showdown lost，亮牌：两对 K 和 9");
+    expect(userContent).toContain("call2 | lost");
+    // hand3 is the last entry and unrevealed: its line ends the JSON string.
+    expect(userContent).toMatch(/call2 \| lost"\}/);
+    expect(userContent).not.toMatch(/[2-9TJQKA][hdcs]\b/);
+    expect(userContent).not.toMatch(/hearts|clubs|diamonds|spades/);
+  });
 });

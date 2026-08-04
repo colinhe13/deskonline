@@ -86,7 +86,7 @@ function positionOf(
 // Guidance shown alongside injected opponent profiles; keeps the GTO system
 // prompt untouched while steering exploitative adjustments.
 const OPPONENT_PROFILE_GUIDANCE =
-  "opponentProfiles 是你对同桌对手积累的行为统计与风格评价（样本充足）。请在 GTO 基线上针对对手倾向调整：对紧手减少诈唬、加大价值下注尺度；对面对加注弃牌率高的对手增加施压频率；对爱抓诈唬（高进摊牌率）的对手减少河牌薄诈唬，只用强牌索取价值。统计仅供参考，不要因单一数据过度偏离。";
+  "opponentProfiles 是你对同桌对手积累的行为统计与风格评价（样本充足）。请在 GTO 基线上针对对手倾向调整：对紧手减少诈唬、加大价值下注尺度；对面对加注弃牌率高的对手增加施压频率；对爱抓诈唬（高进摊牌率）的对手减少河牌薄诈唬，只用强牌索取价值。若评价包含亮牌/摊牌行为观察（如多次亮出弱牌赢下底池），据此校准对其诈唬频率的判断。统计仅供参考，不要因单一数据过度偏离。";
 
 // Assembles the AI-visible situation. Opponents' hole cards are NEVER
 // included — mirrors the getStateForPlayer isolation guarantee.
