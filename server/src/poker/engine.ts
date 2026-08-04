@@ -143,6 +143,7 @@ export class PokerEngine {
 
     this.postBlind(activePlayers[sbIdx], s.smallBlind);
     this.postBlind(activePlayers[bbIdx], s.bigBlind);
+    s.pot = s.players.reduce((sum, p) => sum + p.totalBet, 0);
     s.currentBet = s.bigBlind;
     s.actionLog.push(
       `SB (${activePlayers[sbIdx].username}) posts ${activePlayers[sbIdx].bet}`,

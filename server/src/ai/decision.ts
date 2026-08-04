@@ -30,7 +30,10 @@ function isActionAllowed(
   return availableActions.some((a) => {
     if (a.type !== action) return false;
     if (action === "raise" || action === "allin") {
-      if (amount === undefined) return false;
+      if (amount === undefined || !Number.isSafeInteger(amount) || amount < 0) {
+        return false;
+      }
+      if (action === "allin" && amount === 0) return false;
       if (a.min !== undefined && amount < a.min) return false;
       if (a.max !== undefined && amount > a.max) return false;
     }

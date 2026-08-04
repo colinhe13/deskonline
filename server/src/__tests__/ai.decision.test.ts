@@ -128,6 +128,13 @@ describe("decideAiAction", () => {
     });
   });
 
+  it("falls back when the LLM returns a zero allin amount", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "allin", amount: 0 });
+    await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({
+      action: "check",
+    });
+  });
+
   it("falls back when the LLM call throws", async () => {
     vi.mocked(callLlm).mockRejectedValue(new Error("boom"));
     await expect(decideAiAction(state(), "ai1", withCheck)).resolves.toEqual({

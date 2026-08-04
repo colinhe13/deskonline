@@ -29,6 +29,7 @@ describe("getAvailableActions", () => {
   it("toCall > 0 and chips > toCall: fold/call/raise/allin in order", () => {
     const { engine } = makeEngine(3, 0, 1000);
     engine.startHand();
+    expect(engine.getState().pot).toBe(3);
     // Preflop UTG = u0 (dealer in 3-handed), toCall = big blind 2
     const actions = engine.getAvailableActionsForPlayer("u0");
     expect(actions.map((a) => a.type)).toEqual([
@@ -82,6 +83,31 @@ describe("getAvailableActions", () => {
     engine.startHand();
     expect(engine.handleAction("u0", "raise", 3)).toBe(false); // below min raise 4
     expect(engine.handleAction("u1", "allin", 1000)).toBe(false); // not u1's turn
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+  });
+
+  it("rejects malformed raise amounts without changing the hand", () => {
+    const { engine } = makeEngine(3, 0, 1000);
+    engine.startHand();
+    const before = structuredClone(engine.getState());
+
+    expect(engine.handleAction("u0", "raise", 4.5)).toBe(false);
+    expect(engine.handleAction("u0", "raise", Number.NaN)).toBe(false);
+    expect(engine.handleAction("u0", "raise", Number.POSITIVE_INFINITY)).toBe(
+      false,
+    );
+    expect(engine.handleAction("u0", "raise", -4)).toBe(false);
+    expect(engine.handleAction("u0", "raise", "4" as unknown as number)).toBe(
+      false,
+    );
+    expect(engine.getState()).toEqual(before);
+  });
+
+  it("rejects zero all-in amounts while accepting the real stack amount", () => {
+    const { engine } = makeEngine(3, 0, 1000);
+    engine.startHand();
+
+    expect(engine.handleAction("u0", "allin", 0)).toBe(false);
     expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
   });
 });
