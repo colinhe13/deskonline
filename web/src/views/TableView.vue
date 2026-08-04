@@ -84,7 +84,10 @@
         />
       </main>
 
-      <div class="chat-container" :class="{ open: chatOpen }">
+      <div
+        class="chat-container"
+        :class="{ open: chatOpen, 'has-new': chatStore.unreadCount > 0 }"
+      >
         <div class="chat-drawer-header">
           <span>房间聊天</span>
           <button class="chat-close" @click="chatOpen = false">收起</button>
@@ -101,9 +104,12 @@
       class="chat-toggle"
       type="button"
       :aria-expanded="chatOpen"
-      @click="chatOpen = !chatOpen"
+      @click="toggleChat"
     >
       聊天
+      <span v-if="chatStore.unreadCount > 0" class="chat-badge">{{
+        unreadLabel
+      }}</span>
     </button>
 
     <ActionBar
@@ -220,6 +226,10 @@ const showSettings = ref(false);
 const showTransfer = ref(false);
 const errorMsg = ref("");
 const chatOpen = ref(false);
+let chatHighlightTimer: ReturnType<typeof setTimeout> | null = null;
+const unreadLabel = computed(() =>
+  chatStore.unreadCount > 99 ? "99+" : String(chatStore.unreadCount),
+);
 const revealedMine = ref(false);
 const selectedSeatForQueue = ref<number | null>(null);
 const queueSubmitting = ref(false);
@@ -308,8 +318,26 @@ function handleRoomState(payload: unknown) {
 
 function handleChatMessage(payload: unknown) {
   const p = payload as { message?: ChatMessage };
-  if (p.message) {
-    chatStore.appendMessage(p.message);
+  if (!p.message) return;
+  const fromSelf = p.message.userId === game.myUserId;
+  // When the mobile drawer is open the transcript is already visible, so new
+  // messages must not bump the unread badge.
+  chatStore.appendMessage(p.message, { unread: !fromSelf && !chatOpen.value });
+  if (!fromSelf) {
+    // Desktop highlight auto-clears 5s after the latest incoming message;
+    // it is also cleared by focusing the chat input (ChatPanel).
+    if (chatHighlightTimer) clearTimeout(chatHighlightTimer);
+    chatHighlightTimer = setTimeout(() => {
+      chatHighlightTimer = null;
+      chatStore.markRead();
+    }, 5000);
+  }
+}
+
+function toggleChat() {
+  chatOpen.value = !chatOpen.value;
+  if (chatOpen.value) {
+    chatStore.markRead();
   }
 }
 
@@ -469,6 +497,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (errorTimer) clearTimeout(errorTimer);
+  if (chatHighlightTimer) clearTimeout(chatHighlightTimer);
   offMessage("room:state", handleRoomState);
   offMessage("poker:update", handlePokerUpdate);
   offMessage("poker:hand_result", handleHandResult);
@@ -649,6 +678,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
+.chat-container.has-new :deep(.chat-panel) {
+  border-color: var(--gold);
+  box-shadow:
+    0 0 0 2px rgba(240, 199, 94, 0.35),
+    0 0 18px rgba(240, 199, 94, 0.3);
+}
 .chat-panel-slot {
   flex: 1;
   min-height: 0;
@@ -658,6 +693,23 @@ onUnmounted(() => {
 }
 .chat-toggle {
   display: none;
+}
+.chat-badge {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 .table-main {
   flex: 1;

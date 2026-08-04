@@ -25,6 +25,7 @@
         enterkeyhint="send"
         aria-label="聊天输入框"
         @input="chat.clearError()"
+        @focus="chat.markRead()"
       />
       <span class="chat-count" :class="{ over: isOverLimit }">
         {{ visibleCount }}/{{ MAX_CHAT_LENGTH }}
@@ -85,6 +86,9 @@ watch(
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 .chat-messages {
   flex: 1;

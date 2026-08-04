@@ -9,12 +9,20 @@ const MAX_KEPT_MESSAGES = 500;
 export const useChatStore = defineStore("chat", () => {
   const messages = ref<ChatMessage[]>([]);
   const error = ref("");
+  const unreadCount = ref(0);
 
-  function appendMessage(message: ChatMessage) {
+  function appendMessage(message: ChatMessage, options?: { unread?: boolean }) {
     messages.value.push(message);
     if (messages.value.length > MAX_KEPT_MESSAGES) {
       messages.value.splice(0, messages.value.length - MAX_KEPT_MESSAGES);
     }
+    if (options?.unread) {
+      unreadCount.value += 1;
+    }
+  }
+
+  function markRead() {
+    unreadCount.value = 0;
   }
 
   function setError(message: string) {
@@ -28,12 +36,15 @@ export const useChatStore = defineStore("chat", () => {
   function clearMessages() {
     messages.value = [];
     error.value = "";
+    unreadCount.value = 0;
   }
 
   return {
     messages,
     error,
+    unreadCount,
     appendMessage,
+    markRead,
     setError,
     clearError,
     clearMessages,

@@ -39,6 +39,16 @@ describe("ChatPanel", () => {
     expect(wrapper.findAll(".chat-message")).toHaveLength(0);
   });
 
+  it("marks unread messages read when the input gains focus", async () => {
+    const { wrapper, chat } = mountPanel();
+    chat.appendMessage(message(), { unread: true });
+    expect(chat.unreadCount).toBe(1);
+
+    await wrapper.find(".chat-input").trigger("focus");
+
+    expect(chat.unreadCount).toBe(0);
+  });
+
   it("renders messages with author names and highlights my own", async () => {
     const { wrapper, chat } = mountPanel();
     chat.appendMessage(message());
