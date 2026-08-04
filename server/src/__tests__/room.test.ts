@@ -173,6 +173,22 @@ describe("Room system model", () => {
     expect(s1.confirmed).toBe(true);
     expect(s1.buyIn).toBe(400);
   });
+
+  it("tracks auto-management and clears it on reconnect", () => {
+    const room = makeRoom();
+    room.addPlayer("u1", "P1");
+    const seat = room.findSeatByUserId("u1")!;
+
+    room.markDisconnected("u1");
+    expect(room.markAutoManaged("u1")).toBe(true);
+    expect(room.toDetail().seats[0]).toMatchObject({
+      connected: false,
+      autoManaged: true,
+    });
+
+    room.markReconnected("u1");
+    expect(seat).toMatchObject({ connected: true, autoManaged: false });
+  });
 });
 
 describe("RoomManager defaults", () => {

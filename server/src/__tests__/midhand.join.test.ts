@@ -59,6 +59,7 @@ function resetRoom(room: Room) {
     seat.chips = 0;
     seat.buyIn = 0;
     seat.connected = false;
+    seat.autoManaged = false;
     seat.confirmed = false;
     seat.isAi = false;
     seat.buyInHoldOperationId = null;
@@ -89,6 +90,11 @@ describe("mid-hand seat reservations", () => {
     handler["roomCommandQueues"].clear();
     handler["pendingDisconnectTimers"].forEach((timer) => clearTimeout(timer));
     handler["pendingDisconnectTimers"].clear();
+    handler["pendingDisconnectDeadlines"].clear();
+    handler["seatDisconnectTimers"].forEach((timer) => clearTimeout(timer));
+    handler["seatDisconnectTimers"].clear();
+    handler["seatDisconnectVersions"].clear();
+    handler["disconnectedActionRooms"].clear();
   });
 
   async function joinAndConfirm(userId: string, username: string) {

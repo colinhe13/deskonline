@@ -17,6 +17,7 @@ export interface Seat {
   chips: number;
   buyIn: number;
   connected: boolean;
+  autoManaged: boolean;
   confirmed: boolean;
   isAi: boolean;
   buyInHoldOperationId: string | null;
@@ -69,6 +70,7 @@ export class Room {
       chips: 0,
       buyIn: 0,
       connected: false,
+      autoManaged: false,
       confirmed: false,
       isAi: false,
       buyInHoldOperationId: null,
@@ -271,6 +273,7 @@ export class Room {
     seat.chips = 0;
     seat.buyIn = 0;
     seat.connected = true;
+    seat.autoManaged = false;
     seat.confirmed = false;
     seat.isAi = isAi;
     seat.buyInHoldOperationId = null;
@@ -289,6 +292,7 @@ export class Room {
     seat.chips = 0;
     seat.buyIn = 0;
     seat.connected = false;
+    seat.autoManaged = false;
     seat.confirmed = false;
     seat.isAi = false;
     seat.buyInHoldOperationId = null;
@@ -327,6 +331,7 @@ export class Room {
     to.buyIn = from.buyIn;
     to.confirmed = from.confirmed;
     to.connected = from.connected;
+    to.autoManaged = from.autoManaged;
     to.isAi = from.isAi;
     to.buyInHoldOperationId = from.buyInHoldOperationId;
 
@@ -336,6 +341,7 @@ export class Room {
     from.buyIn = 0;
     from.confirmed = false;
     from.connected = false;
+    from.autoManaged = false;
     from.isAi = false;
     from.buyInHoldOperationId = null;
     return true;
@@ -364,12 +370,25 @@ export class Room {
 
   markDisconnected(userId: string) {
     const seat = this.findSeatByUserId(userId);
-    if (seat) seat.connected = false;
+    if (seat) {
+      seat.connected = false;
+      seat.autoManaged = false;
+    }
+  }
+
+  markAutoManaged(userId: string): boolean {
+    const seat = this.findSeatByUserId(userId);
+    if (!seat || seat.connected) return false;
+    seat.autoManaged = true;
+    return true;
   }
 
   markReconnected(userId: string) {
     const seat = this.findSeatByUserId(userId);
-    if (seat) seat.connected = true;
+    if (seat) {
+      seat.connected = true;
+      seat.autoManaged = false;
+    }
   }
 
   broadcast(gateway: WebSocketGateway, type: string, payload: unknown) {
@@ -404,6 +423,7 @@ export class Room {
         chips: s.chips,
         buyIn: s.buyIn,
         connected: s.connected,
+        autoManaged: s.autoManaged,
         confirmed: s.confirmed,
         isAi: s.isAi,
       })),

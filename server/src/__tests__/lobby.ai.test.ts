@@ -61,7 +61,11 @@ vi.mock("../poker/deck.js", async (importOriginal) => {
 });
 
 import { prisma } from "../db/client.js";
-import { deductPoints, addPoints } from "../points/points.service.js";
+import {
+  deductPoints,
+  addPoints,
+  settleBuyInHold,
+} from "../points/points.service.js";
 import { callLlm } from "../ai/llm.client.js";
 import { decideAiAction } from "../ai/decision.js";
 import { ensureAiAccounts, resetAiStateForTests } from "../ai/accounts.js";
@@ -103,6 +107,7 @@ function resetRoom(room: Room) {
     seat.chips = 0;
     seat.buyIn = 0;
     seat.connected = false;
+    seat.autoManaged = false;
     seat.confirmed = false;
     seat.isAi = false;
   }
@@ -146,9 +151,19 @@ describe("lobby AI lifecycle", () => {
     handler["engines"].clear();
     handler["aiPending"].clear();
     handler["engineGeneration"].clear();
+    handler["roomCommandQueues"].clear();
+    handler["disconnectedActionRooms"].clear();
+    handler["seatDisconnectVersions"].clear();
+    handler["pendingDisconnectDeadlines"].clear();
+    handler["seatDisconnectTimers"].forEach((timer) => clearTimeout(timer));
+    handler["seatDisconnectTimers"].clear();
+    handler["pendingDisconnectTimers"].forEach((timer) => clearTimeout(timer));
+    handler["pendingDisconnectTimers"].clear();
   });
 
   afterEach(() => {
+    handler["seatDisconnectTimers"].forEach((timer) => clearTimeout(timer));
+    handler["pendingDisconnectTimers"].forEach((timer) => clearTimeout(timer));
     handler["engines"].clear();
     resetRoom(room);
   });
@@ -727,6 +742,203 @@ describe("lobby AI lifecycle", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // Disconnect management
+  // ----------------------------------------------------------------
+
+  describe("disconnect management", () => {
+    async function startPlayingWithHumans() {
+      await joinAndConfirm("h1", "alice");
+      await joinAndConfirm("h2", "bob");
+      room.status = "playing";
+      handler["startEngine"](room);
+      gateway.sent.length = 0;
+    }
+
+    it("keeps a disconnected player seated until the 60s deadline", async () => {
+      vi.useFakeTimers();
+      try {
+        await startPlayingWithHumans();
+        handler.handleDisconnect("h2");
+
+        expect(room.findSeatByUserId("h2")).toMatchObject({
+          connected: false,
+          autoManaged: false,
+        });
+
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(room.findSeatByUserId("h2")).toMatchObject({
+          connected: false,
+          autoManaged: false,
+        });
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(room.findSeatByUserId("h2")).toMatchObject({
+          connected: false,
+          autoManaged: true,
+        });
+        expect(room.isSpectator("h2")).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("automatically checks without adding chips when check is legal", async () => {
+      vi.useFakeTimers();
+      try {
+        await startPlayingWithHumans();
+        const engine = handler["engines"].get(room.id)!;
+        const state = engine.getState();
+        const current = state.players[state.currentPlayerIndex]!;
+        state.currentBet = current.bet;
+        const chipsBefore = current.chips;
+        const totalBetBefore = current.totalBet;
+
+        handler.handleDisconnect(current.userId);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(current.chips).toBe(chipsBefore);
+        expect(current.totalBet).toBe(totalBetBefore);
+        expect(current.folded).toBe(false);
+        expect(state.actionLog).toContain(`${current.username} check`);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("automatically folds instead of calling when chips are required", async () => {
+      vi.useFakeTimers();
+      try {
+        await startPlayingWithHumans();
+        const engine = handler["engines"].get(room.id)!;
+        const state = engine.getState();
+        const current = state.players[state.currentPlayerIndex]!;
+        const totalBetBefore = current.totalBet;
+
+        handler.handleDisconnect(current.userId);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(current.folded).toBe(true);
+        expect(current.totalBet).toBe(totalBetBefore);
+        expect(state.actionLog).not.toContain(`${current.username} call 1`);
+        expect(state.actionLog.some((entry) => entry.endsWith(" fold"))).toBe(
+          true,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("cancels the managed state on reconnect and invalidates the timer", async () => {
+      vi.useFakeTimers();
+      try {
+        await startPlayingWithHumans();
+        handler.handleDisconnect("h2");
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(room.findSeatByUserId("h2")?.autoManaged).toBe(true);
+
+        await handler.handleMessage("h2", "bob", "reconnect", {});
+        expect(room.findSeatByUserId("h2")).toMatchObject({
+          connected: true,
+          autoManaged: false,
+        });
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(room.findSeatByUserId("h2")).toBeDefined();
+        expect(room.isSpectator("h2")).toBe(false);
+        expect(
+          gateway.sent.some(
+            (message) =>
+              message.userId === "h2" && message.type === "reconnect:success",
+          ),
+        ).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("restarts the 60s window after a short reconnect", async () => {
+      vi.useFakeTimers();
+      try {
+        await startPlayingWithHumans();
+        handler.handleDisconnect("h2");
+        await vi.advanceTimersByTimeAsync(30_000);
+        await handler.handleMessage("h2", "bob", "reconnect", {});
+
+        handler.handleDisconnect("h2");
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(room.findSeatByUserId("h2")?.autoManaged).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(room.findSeatByUserId("h2")?.autoManaged).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not reset a timer when duplicate disconnect events arrive", async () => {
+      vi.useFakeTimers();
+      try {
+        await startPlayingWithHumans();
+        handler.handleDisconnect("h2");
+        await vi.advanceTimersByTimeAsync(30_000);
+        handler.handleDisconnect("h2");
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(room.findSeatByUserId("h2")?.autoManaged).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("moves an unreconnected managed player to spectators after settlement", async () => {
+      await startPlayingWithHumans();
+      const engine = handler["engines"].get(room.id)!;
+      const seat = room.findSeatByUserId("h2")!;
+      const player = engine.getState().players.find((p) => p.userId === "h2")!;
+      seat.connected = false;
+      seat.autoManaged = true;
+      seat.chips = 123;
+      player.chips = 123;
+      engine.getState().phase = "settled";
+      vi.mocked(addPoints).mockClear();
+
+      await handler["handleHandEnd"](
+        room,
+        handler["engineGeneration"].get(room.id)!,
+      );
+
+      expect(room.findSeatByUserId("h2")).toBeUndefined();
+      expect(room.isSpectator("h2")).toBe(true);
+      expect(addPoints).toHaveBeenCalledWith("h2", 123);
+      expect(room.status).toBe("waiting");
+    });
+
+    it("settles an active hold exactly once when moving a managed player", async () => {
+      await startPlayingWithHumans();
+      const engine = handler["engines"].get(room.id)!;
+      const seat = room.findSeatByUserId("h2")!;
+      const player = engine.getState().players.find((p) => p.userId === "h2")!;
+      seat.connected = false;
+      seat.autoManaged = true;
+      seat.chips = 234;
+      seat.buyInHoldOperationId = "hold-h2";
+      player.chips = 234;
+      engine.getState().phase = "settled";
+      vi.mocked(addPoints).mockClear();
+      vi.mocked(settleBuyInHold).mockClear();
+
+      await handler["handleHandEnd"](
+        room,
+        handler["engineGeneration"].get(room.id)!,
+      );
+
+      expect(settleBuyInHold).toHaveBeenCalledWith("hold-h2", 234);
+      expect(addPoints).not.toHaveBeenCalledWith("h2", expect.anything());
+      expect(room.isSpectator("h2")).toBe(true);
     });
   });
 

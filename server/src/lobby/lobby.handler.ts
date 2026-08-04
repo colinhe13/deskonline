@@ -39,6 +39,13 @@ export class LobbyHandler {
   // while the user is disconnected.
   private pendingDisconnectTimers: Map<string, ReturnType<typeof setTimeout>> =
     new Map();
+  private pendingDisconnectDeadlines: Map<string, number> = new Map();
+  private seatDisconnectTimers: Map<string, ReturnType<typeof setTimeout>> =
+    new Map();
+  private seatDisconnectVersions: Map<string, number> = new Map();
+  // Prevents synchronous engine broadcasts from recursively scheduling the
+  // same room's disconnected turns.
+  private disconnectedActionRooms: Set<string> = new Set();
 
   constructor(private gateway: WebSocketGateway) {}
 
@@ -123,13 +130,22 @@ export class LobbyHandler {
         this.handleStartGame(userId);
         break;
       case "poker:action":
-        this.handlePokerAction(userId, payload);
+        await this.withRoomCommandLock(
+          this.findRoomForUser(userId)?.id ?? "main",
+          () => this.handlePokerAction(userId, payload),
+        );
         break;
       case "poker:reveal":
-        this.handleRevealCards(userId);
+        await this.withRoomCommandLock(
+          this.findRoomForUser(userId)?.id ?? "main",
+          () => this.handleRevealCards(userId),
+        );
         break;
       case "reconnect":
-        this.handleReconnect(userId, username);
+        await this.withRoomCommandLock(
+          this.findRoomForUser(userId)?.id ?? "main",
+          () => this.handleReconnect(userId, username),
+        );
         break;
       case "room:list:request":
         this.sendRoomListToUser(userId);
@@ -174,9 +190,11 @@ export class LobbyHandler {
     return chips;
   }
 
-  private handlePokerAction(userId: string, payload: unknown) {
+  private async handlePokerAction(userId: string, payload: unknown) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
+    const seat = room.findSeatByUserId(userId);
+    if (!seat || !seat.connected || seat.autoManaged) return;
     const engine = this.engines.get(room.id);
     if (!engine) return;
 
@@ -184,7 +202,7 @@ export class LobbyHandler {
     engine.handleAction(userId, p.action, p.amount);
   }
 
-  private handleRevealCards(userId: string) {
+  private async handleRevealCards(userId: string) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
     const engine = this.engines.get(room.id);
@@ -264,6 +282,7 @@ export class LobbyHandler {
     this.engines.set(room.id, engine);
     this.bumpGeneration(room.id);
     engine.startHand();
+    this.scheduleDisconnectedTurns(room);
   }
 
   private resolveDealerIndex(
@@ -317,6 +336,7 @@ export class LobbyHandler {
         });
       }
       this.pushSpectatorView(room);
+      this.scheduleDisconnectedTurns(room);
     } else if (type === "poker:hand_result") {
       room.broadcast(this.gateway, "poker:hand_result", payload);
       const engine = this.engines.get(room.id);
@@ -357,6 +377,62 @@ export class LobbyHandler {
     }
   }
 
+  private scheduleDisconnectedTurns(room: Room) {
+    if (
+      !room.seats.some((seat) => seat.userId && !seat.connected && !seat.isAi)
+    ) {
+      return;
+    }
+    if (this.disconnectedActionRooms.has(room.id)) return;
+    this.disconnectedActionRooms.add(room.id);
+    queueMicrotask(() => {
+      void this.withRoomCommandLock(room.id, async () => {
+        this.driveDisconnectedTurns(room);
+      })
+        .catch((err) => {
+          console.error("[lobby] disconnected turn failed", err);
+        })
+        .finally(() => {
+          this.disconnectedActionRooms.delete(room.id);
+        });
+    });
+  }
+
+  private driveDisconnectedTurns(room: Room) {
+    const maxSteps = room.seats.length * 4;
+    let steps = 0;
+
+    while (steps < maxSteps) {
+      const engine = this.engines.get(room.id);
+      if (!engine) return;
+      const state = engine.getState();
+      if (state.phase === "showdown" || state.phase === "settled") return;
+
+      const current = state.players[state.currentPlayerIndex];
+      if (!current) return;
+      const seat = room.findSeatByUserId(current.userId);
+      if (!seat || seat.connected || seat.isAi) return;
+
+      const actions = engine.getAvailableActionsForPlayer(current.userId);
+      const pick =
+        actions.find((action) => action.type === "check") ??
+        actions.find((action) => action.type === "fold");
+      if (!pick) return;
+
+      const applied = engine.handleAction(
+        current.userId,
+        pick.type,
+        pick.amount,
+      );
+      if (!applied) return;
+      steps++;
+    }
+
+    if (steps === maxSteps) {
+      console.error(`[lobby] disconnected turn limit reached in ${room.id}`);
+    }
+  }
+
   // ------------------------------------------------------------------
   // AI turn scheduling
   // ------------------------------------------------------------------
@@ -377,55 +453,67 @@ export class LobbyHandler {
     // Last-resort watchdog: whatever happens inside the LLM path, this turn MUST
     // produce a legal action within a bounded time or the table stalls.
     const watchdog = setTimeout(() => {
-      const eng = this.engines.get(roomId);
-      // A rebuilt engine owns a fresh pending marker; never touch it here.
-      if (!eng || eng !== engine) return;
-      const st = eng.getState();
-      if (st.phase === "showdown" || st.phase === "settled") return;
-      if (!this.consumeAiPending(roomId, userId)) return;
-      console.warn(`[ai] watchdog forcing fallback action for ${userId}`);
-      const applied = this.applyFallbackAction(eng, userId);
-      if (applied) {
-        const me = st.players.find((p) => p.userId === userId);
-        recordAiDecision({
-          username: me?.username ?? userId,
-          phase: st.phase,
-          handNo: st.handNumber,
-          toCall: me ? Math.max(0, st.currentBet - me.bet) : 0,
-          source: "watchdog",
-          failReason: "no_response",
-          finalAction: applied,
-        });
-      }
+      void this.withRoomCommandLock(roomId, async () => {
+        const eng = this.engines.get(roomId);
+        // A rebuilt engine owns a fresh pending marker; never touch it here.
+        if (!eng || eng !== engine) return;
+        const st = eng.getState();
+        if (st.phase === "showdown" || st.phase === "settled") return;
+        if (!this.consumeAiPending(roomId, userId)) return;
+        console.warn(`[ai] watchdog forcing fallback action for ${userId}`);
+        const applied = this.applyFallbackAction(eng, userId);
+        if (applied) {
+          const me = st.players.find((p) => p.userId === userId);
+          recordAiDecision({
+            username: me?.username ?? userId,
+            phase: st.phase,
+            handNo: st.handNumber,
+            toCall: me ? Math.max(0, st.currentBet - me.bet) : 0,
+            source: "watchdog",
+            failReason: "no_response",
+            finalAction: applied,
+          });
+        }
+      }).catch((err) => {
+        console.error("[ai] watchdog action failed", err);
+      });
     }, config.aiTimeoutMs + 5000);
 
     decideAiAction(state, userId, engine.getAvailableActionsForPlayer(userId))
       .then(({ action, amount }) => {
         clearTimeout(watchdog);
-        const eng = this.engines.get(roomId);
-        // The table may have changed while the LLM was thinking; a rebuilt
-        // engine has already rescheduled this AI's turn on its own.
-        if (!eng || eng !== engine) return;
-        if (!this.consumeAiPending(roomId, userId)) return;
-        const st = eng.getState();
-        if (st.phase === "showdown" || st.phase === "settled") return;
-        const cur = st.players[st.currentPlayerIndex];
-        if (!cur || cur.userId !== userId) return;
+        void this.withRoomCommandLock(roomId, async () => {
+          const eng = this.engines.get(roomId);
+          // The table may have changed while the LLM was thinking; a rebuilt
+          // engine has already rescheduled this AI's turn on its own.
+          if (!eng || eng !== engine) return;
+          if (!this.consumeAiPending(roomId, userId)) return;
+          const st = eng.getState();
+          if (st.phase === "showdown" || st.phase === "settled") return;
+          const cur = st.players[st.currentPlayerIndex];
+          if (!cur || cur.userId !== userId) return;
 
-        if (!eng.handleAction(userId, action, amount)) {
-          const applied = this.applyFallbackAction(eng, userId);
-          console.warn(
-            `[ai] rejected action ${action}, applied fallback ${applied ?? "none"}`,
-          );
-        }
+          if (!eng.handleAction(userId, action, amount)) {
+            const applied = this.applyFallbackAction(eng, userId);
+            console.warn(
+              `[ai] rejected action ${action}, applied fallback ${applied ?? "none"}`,
+            );
+          }
+        }).catch((err) => {
+          console.error("[ai] decision action failed", err);
+        });
       })
       .catch((err) => {
         clearTimeout(watchdog);
         console.error("[ai] decision failed", err);
-        const eng = this.engines.get(roomId);
-        if (!eng || eng !== engine) return;
-        if (!this.consumeAiPending(roomId, userId)) return;
-        this.applyFallbackAction(eng, userId);
+        void this.withRoomCommandLock(roomId, async () => {
+          const eng = this.engines.get(roomId);
+          if (!eng || eng !== engine) return;
+          if (!this.consumeAiPending(roomId, userId)) return;
+          this.applyFallbackAction(eng, userId);
+        }).catch((lockErr) => {
+          console.error("[ai] fallback action failed", lockErr);
+        });
       });
   }
 
@@ -537,12 +625,21 @@ export class LobbyHandler {
           reservation.userId,
         );
         room.removeSpectator(reservation.userId);
+        const pendingDeadline = this.pendingDisconnectDeadlines.get(
+          reservation.userId,
+        );
+        this.clearPendingDisconnectTimer(reservation.userId);
         if (seat.connected) {
-          this.clearPendingDisconnectTimer(reservation.userId);
           this.sendVoiceToken(
             reservation.userId,
             reservation.username,
             room.id,
+          );
+        } else {
+          this.scheduleSeatDisconnect(
+            room,
+            reservation.userId,
+            pendingDeadline ?? Date.now() + 60_000,
           );
         }
         this.gateway.sendToUser(
@@ -607,6 +704,10 @@ export class LobbyHandler {
     if (!engine || room.status !== "playing") return;
 
     this.destroyEngine(room);
+    await this.settleManagedDisconnectedPlayers(room);
+    if (!room.humanSeats().some((seat) => !seat.confirmed)) {
+      room.autoResume = false;
+    }
     await this.settleSeatChanges(room);
     if (room.seats.some((seat) => seat.buyInHoldOperationId)) {
       await this.settleActiveHolds(room);
@@ -646,6 +747,30 @@ export class LobbyHandler {
     room.status = "playing";
     this.startEngine(room);
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
+  }
+
+  private async settleManagedDisconnectedPlayers(room: Room) {
+    for (const seat of [...room.seats]) {
+      const userId = seat.userId;
+      if (!userId || seat.isAi || seat.connected || !seat.autoManaged) {
+        continue;
+      }
+
+      const username = seat.username!;
+      const chips = seat.chips;
+      const holdOperationId = seat.buyInHoldOperationId;
+      if (holdOperationId) {
+        const settled = await settleBuyInHold(holdOperationId, chips);
+        if (!settled) throw new Error("HOLD_SETTLEMENT_FAILED");
+      } else if (chips > 0) {
+        await addPoints(userId, chips);
+      }
+
+      this.clearSeatDisconnectTimer(userId);
+      this.gateway.sendToUser(userId, "voice:disconnect", {});
+      room.removePlayer(userId);
+      room.addSpectator(userId, username);
+    }
   }
 
   // Removes every AI seat, refunding chips. Enforces "no pure-AI tables".
@@ -978,12 +1103,73 @@ export class LobbyHandler {
     const timer = this.pendingDisconnectTimers.get(userId);
     if (timer) clearTimeout(timer);
     this.pendingDisconnectTimers.delete(userId);
+    this.pendingDisconnectDeadlines.delete(userId);
+  }
+
+  private clearSeatDisconnectTimer(userId: string) {
+    const timer = this.seatDisconnectTimers.get(userId);
+    if (timer) clearTimeout(timer);
+    this.seatDisconnectTimers.delete(userId);
+    this.seatDisconnectVersions.set(
+      userId,
+      (this.seatDisconnectVersions.get(userId) ?? 0) + 1,
+    );
+  }
+
+  private scheduleSeatDisconnect(
+    room: Room,
+    userId: string,
+    deadlineAt = Date.now() + 60_000,
+  ) {
+    this.clearSeatDisconnectTimer(userId);
+    const version = (this.seatDisconnectVersions.get(userId) ?? 0) + 1;
+    this.seatDisconnectVersions.set(userId, version);
+    const delay = Math.max(0, deadlineAt - Date.now());
+    const timer = setTimeout(() => {
+      if (this.seatDisconnectVersions.get(userId) !== version) return;
+      this.seatDisconnectTimers.delete(userId);
+      void this.withRoomCommandLock(room.id, async () => {
+        if (this.seatDisconnectVersions.get(userId) !== version) return;
+        const currentRoom = roomManager.findRoomByPlayer(userId);
+        const seat = currentRoom?.findSeatByUserId(userId);
+        if (
+          !currentRoom ||
+          currentRoom.id !== room.id ||
+          !seat ||
+          seat.connected
+        ) {
+          return;
+        }
+
+        if (currentRoom.status === "playing" && this.engines.has(room.id)) {
+          if (currentRoom.markAutoManaged(userId)) {
+            currentRoom.broadcast(this.gateway, "room:state", {
+              room: currentRoom.toDetail(),
+            });
+            this.scheduleDisconnectedTurns(currentRoom);
+          }
+          return;
+        }
+
+        try {
+          await this.ejectPlayer(currentRoom, userId);
+        } catch (err) {
+          console.error("[lobby] disconnect eject failed", err);
+        }
+      }).catch((err) => {
+        console.error("[lobby] seat disconnect timeout failed", err);
+      });
+    }, delay);
+    this.seatDisconnectTimers.set(userId, timer);
   }
 
   private schedulePendingDisconnect(room: Room, userId: string) {
     this.clearPendingDisconnectTimer(userId);
+    const deadlineAt = Date.now() + 60_000;
+    this.pendingDisconnectDeadlines.set(userId, deadlineAt);
     const timer = setTimeout(() => {
       this.pendingDisconnectTimers.delete(userId);
+      this.pendingDisconnectDeadlines.delete(userId);
       void this.withRoomCommandLock(room.id, async () => {
         const currentRoom = this.findRoomForUser(userId);
         if (!currentRoom) return;
@@ -1002,11 +1188,6 @@ export class LobbyHandler {
             this.broadcastLobbyList();
           }
           return;
-        }
-
-        const seat = currentRoom.findSeatByUserId(userId);
-        if (seat && !seat.connected) {
-          await this.ejectPlayer(currentRoom, userId);
         }
       }).catch((err) => {
         console.error("[lobby] pending disconnect cleanup failed", err);
@@ -1304,12 +1485,14 @@ export class LobbyHandler {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
 
+    this.clearSeatDisconnectTimer(userId);
     this.gateway.sendToUser(userId, "voice:disconnect", {});
     await this.ejectPlayer(room, userId);
   }
 
   // Removes a player, settling chips and keeping the system room alive.
   private async ejectPlayer(room: Room, userId: string) {
+    this.clearSeatDisconnectTimer(userId);
     const engine = this.engines.get(room.id);
     const state = engine?.getState();
     const wasInHand = !!state && state.players.some((p) => p.userId === userId);
@@ -1398,21 +1581,16 @@ export class LobbyHandler {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
 
-    room.markDisconnected(userId);
+    const seat = room.findSeatByUserId(userId);
+    if (!seat) return;
+    if (seat.connected) {
+      room.markDisconnected(userId);
+      this.scheduleSeatDisconnect(room, userId);
+    } else if (!seat.autoManaged && !this.seatDisconnectTimers.has(userId)) {
+      this.scheduleSeatDisconnect(room, userId);
+    }
     room.broadcast(this.gateway, "room:state", { room: room.toDetail() });
-
-    setTimeout(async () => {
-      const currentRoom = roomManager.findRoomByPlayer(userId);
-      if (!currentRoom) return;
-      const seat = currentRoom.findSeatByUserId(userId);
-      if (seat && !seat.connected) {
-        try {
-          await this.ejectPlayer(currentRoom, userId);
-        } catch (err) {
-          console.error("[lobby] disconnect eject failed", err);
-        }
-      }
-    }, 60_000);
+    this.scheduleDisconnectedTurns(room);
   }
 
   // ------------------------------------------------------------------
@@ -1517,9 +1695,10 @@ export class LobbyHandler {
     });
   }
 
-  private handleReconnect(userId: string, username: string) {
+  private async handleReconnect(userId: string, username: string) {
     const room = roomManager.findRoomByPlayer(userId);
     if (room) {
+      this.clearSeatDisconnectTimer(userId);
       this.clearPendingDisconnectTimer(userId);
       room.markReconnected(userId);
       room.broadcast(this.gateway, "room:state", { room: room.toDetail() });

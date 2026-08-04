@@ -55,6 +55,7 @@ function resetRoom(room: Room) {
     seat.chips = 0;
     seat.buyIn = 0;
     seat.connected = false;
+    seat.autoManaged = false;
     seat.confirmed = false;
     seat.isAi = false;
     seat.buyInHoldOperationId = null;
