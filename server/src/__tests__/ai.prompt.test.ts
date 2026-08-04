@@ -185,3 +185,56 @@ describe("GTO_SYSTEM_PROMPT", () => {
     expect(GTO_SYSTEM_PROMPT).toContain("本轮你要额外投入的筹码数");
   });
 });
+
+describe("buildDecisionContext opponent profiles", () => {
+  const readyProfile = {
+    userId: "u2",
+    username: "human2",
+    isAi: false,
+    hands: 8,
+    ready: true,
+    stats: {
+      hands: 8,
+      vpip: 40,
+      pfr: 25,
+      threeBet: 10,
+      af: 2.5,
+      foldToRaise: 60,
+      wtsd: 30,
+    },
+    note: "翻前偏紧，河牌爱抓诈唬",
+  };
+
+  it("omits profile fields when no profiles are passed", () => {
+    const ctx = buildDecisionContext(state(), "ai1");
+    expect(ctx).not.toHaveProperty("opponentProfiles");
+    expect(ctx).not.toHaveProperty("opponentProfileGuidance");
+  });
+
+  it("injects ready profiles at the head of the context with guidance", () => {
+    const ctx = buildDecisionContext(state(), "ai1", [readyProfile]);
+    const keys = Object.keys(ctx);
+    expect(keys[0]).toBe("opponentProfileGuidance");
+    expect(keys[1]).toBe("opponentProfiles");
+    const profiles = ctx.opponentProfiles as {
+      name: string;
+      stats: unknown;
+      note: string;
+    }[];
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].name).toBe("human2");
+    expect(profiles[0].note).toBe("翻前偏紧，河牌爱抓诈唬");
+  });
+
+  it("filters out profiles below the sample threshold", () => {
+    const coldProfile = { ...readyProfile, ready: false, stats: null, note: null };
+    const ctx = buildDecisionContext(state(), "ai1", [coldProfile]);
+    expect(ctx).not.toHaveProperty("opponentProfiles");
+  });
+
+  it("never leaks hole cards through the profile section", () => {
+    const ctx = buildDecisionContext(state(), "ai1", [readyProfile]);
+    const serialized = JSON.stringify(ctx.opponentProfiles);
+    expect(serialized).not.toMatch(/[2-9TJQKA][hdcs]\b/);
+  });
+});

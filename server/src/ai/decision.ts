@@ -4,6 +4,7 @@ import { buildDecisionContext, GTO_SYSTEM_PROMPT } from "./prompt.js";
 import { callLlm } from "./llm.client.js";
 import { config } from "../config.js";
 import { recordAiDecision, AiFailReason } from "./stats.js";
+import type { ProfileView } from "./profiling/types.js";
 
 export interface AiAction {
   action: PlayerActionType;
@@ -66,6 +67,7 @@ export async function decideAiAction(
   state: GameState,
   userId: string,
   availableActions: ActionOption[],
+  opponentProfiles?: ProfileView[],
 ): Promise<AiAction> {
   const fallback = fallbackAction(availableActions);
   const me = state.players.find((p) => p.userId === userId);
@@ -92,7 +94,7 @@ export async function decideAiAction(
   };
 
   try {
-    const context = buildDecisionContext(state, userId);
+    const context = buildDecisionContext(state, userId, opponentProfiles);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Grace margin over the fetch-level abort so the outer race is the

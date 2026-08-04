@@ -1,4 +1,5 @@
 import { GameState, Card, Suit } from "../poker/types.js";
+import type { ProfileView } from "./profiling/types.js";
 
 export const GTO_SYSTEM_PROMPT = `你是一名顶级无限注德州扑克 GTO（博弈论最优）策略引擎。你根据当前牌局局面输出唯一决策。请严格遵循以下策略框架与输出规范。
 
@@ -82,11 +83,17 @@ function positionOf(
   return POSITION_LABELS[Math.min(offset, POSITION_LABELS.length - 1)];
 }
 
+// Guidance shown alongside injected opponent profiles; keeps the GTO system
+// prompt untouched while steering exploitative adjustments.
+const OPPONENT_PROFILE_GUIDANCE =
+  "opponentProfiles 是你对同桌对手积累的行为统计与风格评价（样本充足）。请在 GTO 基线上针对对手倾向调整：对紧手减少诈唬、加大价值下注尺度；对面对加注弃牌率高的对手增加施压频率；对爱抓诈唬（高进摊牌率）的对手减少河牌薄诈唬，只用强牌索取价值。统计仅供参考，不要因单一数据过度偏离。";
+
 // Assembles the AI-visible situation. Opponents' hole cards are NEVER
 // included — mirrors the getStateForPlayer isolation guarantee.
 export function buildDecisionContext(
   state: GameState,
   userId: string,
+  profiles?: ProfileView[],
 ): Record<string, unknown> {
   const myIndex = state.players.findIndex((p) => p.userId === userId);
   const me = state.players[myIndex];
@@ -99,7 +106,7 @@ export function buildDecisionContext(
       ? Math.min(state.currentBet + state.minRaise - me.bet, me.chips)
       : Math.min(state.bigBlind, me.chips);
 
-  return {
+  const base: Record<string, unknown> = {
     phase: state.phase,
     handNo: state.handNumber,
     blinds: { sb: state.smallBlind, bb: state.bigBlind },
@@ -126,5 +133,19 @@ export function buildDecisionContext(
       })),
     communityCards: state.communityCards.map(formatCard),
     history: [...(state.actionLog ?? [])],
+  };
+
+  // Profiles go first so the stable prefix within one hand can hit the
+  // provider's context cache on repeated decision calls.
+  const usable = (profiles ?? []).filter((p) => p.ready);
+  if (usable.length === 0) return base;
+  return {
+    opponentProfileGuidance: OPPONENT_PROFILE_GUIDANCE,
+    opponentProfiles: usable.map((p) => ({
+      name: p.username,
+      stats: p.stats,
+      note: p.note ?? undefined,
+    })),
+    ...base,
   };
 }

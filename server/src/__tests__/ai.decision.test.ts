@@ -187,4 +187,39 @@ describe("decideAiAction", () => {
       action: "check",
     });
   });
+
+  const readyProfile = {
+    userId: "u2",
+    username: "h2",
+    isAi: false,
+    hands: 6,
+    ready: true,
+    stats: {
+      hands: 6,
+      vpip: 30,
+      pfr: 20,
+      threeBet: null,
+      af: 1.5,
+      foldToRaise: 50,
+      wtsd: 25,
+    },
+    note: "翻前很紧",
+  };
+
+  it("forwards ready opponent profiles into the LLM prompt", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "check", amount: 0 });
+    await decideAiAction(state(), "ai1", withCheck, [readyProfile]);
+    const userContent = vi.mocked(callLlm).mock.calls[0][1];
+    expect(userContent).toContain("opponentProfiles");
+    expect(userContent).toContain("翻前很紧");
+  });
+
+  it("does not inject profiles below the sample threshold", async () => {
+    vi.mocked(callLlm).mockResolvedValue({ action: "check", amount: 0 });
+    await decideAiAction(state(), "ai1", withCheck, [
+      { ...readyProfile, ready: false, stats: null, note: null },
+    ]);
+    const userContent = vi.mocked(callLlm).mock.calls[0][1];
+    expect(userContent).not.toContain("opponentProfiles");
+  });
 });

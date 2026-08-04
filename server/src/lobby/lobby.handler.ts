@@ -10,12 +10,15 @@ import {
   settleBuyInHold,
   updateBuyInHoldAmount,
 } from "../points/points.service.js";
-import { PokerEngine } from "../poker/engine.js";
+import { PokerEngine, HandResult } from "../poker/engine.js";
 import { Room } from "./room.js";
 import { livekitService } from "../voice/livekit.service.js";
 import { isAiUserId, pickFreeAi } from "../ai/accounts.js";
 import { decideAiAction } from "../ai/decision.js";
 import { recordAiDecision } from "../ai/stats.js";
+import { buildHandRecord } from "../ai/profiling/handRecord.js";
+import { profileStore } from "../ai/profiling/store.js";
+import { summarizeOpponent } from "../ai/profiling/summarizer.js";
 import { config } from "../config.js";
 import { ActionOption, PlayerActionType } from "../poker/types.js";
 import {
@@ -46,6 +49,8 @@ export class LobbyHandler {
   // Prevents synchronous engine broadcasts from recursively scheduling the
   // same room's disconnected turns.
   private disconnectedActionRooms: Set<string> = new Set();
+  // One profile-summary run per room at a time; summaries are fire-and-forget.
+  private profilingBusy: Set<string> = new Set();
 
   constructor(private gateway: WebSocketGateway) {}
 
@@ -353,6 +358,12 @@ export class LobbyHandler {
           const seat = room.findSeatByUserId(p.userId);
           if (seat) seat.chips = p.chips;
         }
+        try {
+          this.collectHandForProfiling(room, engine, payload as HandResult);
+        } catch (err) {
+          // Profiling must never disturb settlement or the next hand.
+          console.error("[profiling] hand collection failed", err);
+        }
       }
       // Busted humans become unconfirmed (their client shows the rebuy
       // prompt); busted AI seats are handled at the hand boundary.
@@ -486,7 +497,16 @@ export class LobbyHandler {
       });
     }, config.aiTimeoutMs + 5000);
 
-    decideAiAction(state, userId, engine.getAvailableActionsForPlayer(userId))
+    const seatedIds = new Set(state.players.map((p) => p.userId));
+    const opponentProfiles = profileStore
+      .getViews(roomId)
+      .filter((v) => seatedIds.has(v.userId));
+    decideAiAction(
+      state,
+      userId,
+      engine.getAvailableActionsForPlayer(userId),
+      opponentProfiles,
+    )
       .then(({ action, amount }) => {
         clearTimeout(watchdog);
         void this.withRoomCommandLock(roomId, async () => {
@@ -547,6 +567,63 @@ export class LobbyHandler {
     if (!pick) return undefined;
     eng.handleAction(userId, pick.type, pick.amount);
     return pick.type;
+  }
+
+  // ------------------------------------------------------------------
+  // Opponent profiling
+  // ------------------------------------------------------------------
+
+  // Records one settled hand for every human participant. AI accounts are
+  // never profiled. Called synchronously at settlement; the LLM summary runs
+  // asynchronously and never blocks the game loop.
+  private collectHandForProfiling(room: Room, engine: PokerEngine, result: HandResult) {
+    const record = buildHandRecord(engine.getHandHistory(), result);
+    const state = engine.getState();
+    for (const p of state.players) {
+      if (isAiUserId(p.userId)) continue;
+      profileStore.recordHand(room.id, p.userId, p.username, record);
+    }
+    this.broadcastProfiles(room);
+    void this.runProfileSummaries(room);
+  }
+
+  private broadcastProfiles(room: Room) {
+    room.broadcast(this.gateway, "ai:profile:update", {
+      profiles: profileStore.getViews(room.id),
+    });
+  }
+
+  private async runProfileSummaries(room: Room) {
+    const roomId = room.id;
+    if (!room.aiSeats().some((s) => s.userId)) return;
+    if (this.profilingBusy.has(roomId)) return;
+
+    const eligible = profileStore
+      .listProfiles(roomId)
+      .filter(
+        (p) =>
+          p.stats.hands >= config.aiProfileMinHands &&
+          p.handsSinceLastSummary >= config.aiProfileSummaryEvery,
+      );
+    if (eligible.length === 0) return;
+
+    this.profilingBusy.add(roomId);
+    try {
+      for (const profile of eligible) {
+        const note = await summarizeOpponent(
+          profile,
+          profileStore.getRecentRecords(roomId, profile.userId),
+        );
+        if (note) {
+          profileStore.setNote(roomId, profile.userId, note);
+          this.broadcastProfiles(room);
+        }
+      }
+    } catch (err) {
+      console.error("[profiling] summary run failed", err);
+    } finally {
+      this.profilingBusy.delete(roomId);
+    }
   }
 
   // ------------------------------------------------------------------
@@ -795,6 +872,7 @@ export class LobbyHandler {
       if (chips > 0) await addPoints(uid, chips);
     }
     room.pendingLeaveUserIds = [];
+    profileStore.clearRoom(room.id);
   }
 
   // ------------------------------------------------------------------
