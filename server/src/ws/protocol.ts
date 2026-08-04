@@ -24,6 +24,32 @@ export function parseClientMessage(data: string): ClientMessage | null {
   }
 }
 
+export const MAX_CHAT_LENGTH = 200;
+
+export interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  sentAt: number;
+}
+
+export type ChatValidationResult =
+  | { ok: true; text: string }
+  | { ok: false; code: "CHAT_EMPTY" | "CHAT_TOO_LONG" };
+
+// Length is measured in user-visible code points (after trimming) so Chinese
+// text and emoji count the same way they read.
+export function validateChatText(raw: unknown): ChatValidationResult {
+  if (typeof raw !== "string") return { ok: false, code: "CHAT_EMPTY" };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { ok: false, code: "CHAT_EMPTY" };
+  if ([...trimmed].length > MAX_CHAT_LENGTH) {
+    return { ok: false, code: "CHAT_TOO_LONG" };
+  }
+  return { ok: true, text: trimmed };
+}
+
 const LOBBY_PREFIXES = ["room:", "poker:", "ai:"];
 
 // The gateway forwards only these messages to the LobbyHandler.
