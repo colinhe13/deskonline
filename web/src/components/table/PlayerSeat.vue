@@ -20,7 +20,12 @@
         />
       </div>
       <div class="avatar-wrap">
-        <div class="avatar" :style="avatarStyle">
+        <div
+          class="avatar"
+          :style="avatarStyle"
+          title="查看玩家画像"
+          @click.stop="$emit('show-profile')"
+        >
           {{ seat.username?.charAt(0).toUpperCase() }}
         </div>
         <span v-if="seat.isDealer" class="dealer-btn">D</span>
@@ -91,7 +96,7 @@ const props = defineProps<{
   canRemoveAi?: boolean;
 }>();
 
-defineEmits<{ "remove-ai": [] }>();
+defineEmits<{ "remove-ai": []; "show-profile": [] }>();
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #e05252, #7f2b2b)",
@@ -145,6 +150,7 @@ const avatarStyle = computed(() => {
   border: 2px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   transition: border-color var(--dur-fast);
+  cursor: pointer;
 }
 .current .avatar {
   border-color: var(--gold);
@@ -202,6 +208,7 @@ const avatarStyle = computed(() => {
   font-size: var(--fs-sm);
   border: 2px dashed var(--glass-border);
   box-shadow: none;
+  cursor: default;
 }
 .reservation-badge {
   color: var(--gold-soft);

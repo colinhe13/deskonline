@@ -19,6 +19,7 @@
           :is-winner="isWinner(seat)"
           :can-remove-ai="!!isViewerHost && !!seat.isAi"
           @remove-ai="onRemoveAi(seat)"
+          @show-profile="onShowProfile(seat)"
         />
       </div>
       <div class="table-center">
@@ -57,10 +58,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   sit: [seatIndex: number];
   "remove-ai": [userId: string];
+  "show-profile": [userId: string];
 }>();
 
 function onRemoveAi(seat: MergedSeat) {
   if (seat.userId) emit("remove-ai", seat.userId);
+}
+
+function onShowProfile(seat: MergedSeat) {
+  if (seat.userId) emit("show-profile", seat.userId);
 }
 
 const isViewerSpectator = computed(

@@ -81,6 +81,7 @@
           :is-viewer-host="isHost"
           @sit="handleSitDown"
           @remove-ai="removeAi"
+          @show-profile="(uid) => (profileUserId = uid)"
         />
       </main>
 
@@ -155,6 +156,16 @@
       />
     </Transition>
 
+    <Transition name="modal">
+      <PlayerProfileModal
+        v-if="profileUserId && profileSeat"
+        :username="profileSeat.username ?? profileUserId"
+        :is-ai="!!profileSeat.isAi"
+        :profile="profileView"
+        @close="profileUserId = null"
+      />
+    </Transition>
+
     <div v-if="game.handResult" class="hand-result-banner">
       <div
         v-for="w in game.handResult.winners"
@@ -191,6 +202,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useGameStore } from "../stores/game";
 import { useChatStore } from "../stores/chat";
+import { useProfilesStore } from "../stores/profiles";
 import { useWebSocket } from "../composables/useWebSocket";
 import { VOICE_ENABLED } from "../utils/featureFlags";
 import PokerTable from "../components/table/PokerTable.vue";
@@ -199,9 +211,11 @@ import VoicePanel from "../components/voice/VoicePanel.vue";
 import ConfirmBuyIn from "../components/table/ConfirmBuyIn.vue";
 import RoomSettingsModal from "../components/table/RoomSettingsModal.vue";
 import TransferHostModal from "../components/table/TransferHostModal.vue";
+import PlayerProfileModal from "../components/table/PlayerProfileModal.vue";
 import SpectatorList from "../components/table/SpectatorList.vue";
 import ChatPanel from "../components/chat/ChatPanel.vue";
 import type { ChatMessage } from "../types/protocol";
+import type { ProfileView } from "../stores/profiles";
 import type {
   RoomDetail,
   PokerState,
@@ -212,6 +226,7 @@ import type {
 const auth = useAuthStore();
 const game = useGameStore();
 const chatStore = useChatStore();
+const profilesStore = useProfilesStore();
 const route = useRoute();
 const router = useRouter();
 const {
@@ -224,6 +239,15 @@ const {
 
 const showSettings = ref(false);
 const showTransfer = ref(false);
+const profileUserId = ref<string | null>(null);
+const profileSeat = computed(() =>
+  game.room?.seats.find((s) => s.userId === profileUserId.value),
+);
+const profileView = computed(
+  () =>
+    (profileUserId.value && profilesStore.profiles[profileUserId.value]) ||
+    null,
+);
 const errorMsg = ref("");
 const chatOpen = ref(false);
 let chatHighlightTimer: ReturnType<typeof setTimeout> | null = null;
@@ -302,18 +326,30 @@ function showError(message: string) {
 }
 
 function handleRoomState(payload: unknown) {
-  const p = payload as { room: RoomDetail | null; reason?: string };
+  const p = payload as {
+    room: RoomDetail | null;
+    reason?: string;
+    profiles?: ProfileView[];
+  };
   if (p.room) {
     // Chat is real-time only: switching rooms starts a fresh transcript.
     if (game.room?.id != null && game.room.id !== p.room.id) {
       chatStore.clearMessages();
+      profilesStore.clearProfiles();
     }
     game.setRoom(p.room);
+    if (p.profiles) profilesStore.applyProfiles(p.profiles);
   } else {
     chatStore.clearMessages();
+    profilesStore.clearProfiles();
     game.setRoom(null);
     router.push("/lobby");
   }
+}
+
+function handleProfileUpdate(payload: unknown) {
+  const p = payload as { profiles?: ProfileView[] };
+  profilesStore.applyProfiles(p.profiles);
 }
 
 function handleChatMessage(payload: unknown) {
@@ -435,6 +471,7 @@ function handleSitDown(seatIndex: number) {
 function leaveRoom() {
   send("room:leave", {});
   chatStore.clearMessages();
+  profilesStore.clearProfiles();
   game.setRoom(null);
   router.push("/lobby");
 }
@@ -484,6 +521,7 @@ onMounted(() => {
   onMessage("poker:hand_result", handleHandResult);
   onMessage("room:error", handleRoomError);
   onMessage("room:chat:message", handleChatMessage);
+  onMessage("ai:profile:update", handleProfileUpdate);
   onMessage("reconnect:success", handleReconnectSuccess);
   onMessage("reconnect:failed", handleReconnectFailed);
   onMessage("room:queue-join:accepted", handleQueueJoinAccepted);
@@ -503,6 +541,7 @@ onUnmounted(() => {
   offMessage("poker:hand_result", handleHandResult);
   offMessage("room:error", handleRoomError);
   offMessage("room:chat:message", handleChatMessage);
+  offMessage("ai:profile:update", handleProfileUpdate);
   offMessage("reconnect:success", handleReconnectSuccess);
   offMessage("reconnect:failed", handleReconnectFailed);
   offMessage("room:queue-join:accepted", handleQueueJoinAccepted);
