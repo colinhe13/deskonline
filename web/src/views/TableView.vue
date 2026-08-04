@@ -639,14 +639,15 @@ onUnmounted(() => {
   min-height: 0;
 }
 .chat-container {
+  position: fixed;
+  right: 0.9rem;
+  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  width: 300px;
+  height: min(420px, calc(100dvh - 15rem));
+  min-height: 220px;
+  z-index: var(--z-chat);
   display: flex;
   flex-direction: column;
-  width: 300px;
-  flex-shrink: 0;
-  min-height: 240px;
-  max-height: calc(100dvh - 9rem);
-  align-self: flex-end;
-  margin: 0 0.75rem 0.75rem 0;
 }
 .chat-panel-slot {
   flex: 1;
@@ -678,6 +679,7 @@ onUnmounted(() => {
     width: auto;
     height: 50dvh;
     max-height: 50dvh;
+    min-height: 0;
     margin: 0;
     z-index: var(--z-chat);
     display: none;
