@@ -8,13 +8,14 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  username  String   @unique @db.VarChar(32)
-  password  String   @db.VarChar(255)
-  points    Int      @default(10000)
-  isAi      Boolean  @default(false) @map("is_ai")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id             String   @id @default(uuid())
+  username       String   @unique @db.VarChar(32)
+  password       String   @db.VarChar(255)
+  points         Int      @default(10000)
+  sessionVersion Int      @default(0) @map("session_version")
+  isAi           Boolean  @default(false) @map("is_ai")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   buyInHolds BuyInHold[]
 

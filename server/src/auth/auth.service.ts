@@ -6,6 +6,7 @@ import { config } from "../config.js";
 export interface JwtPayload {
   userId: string;
   username: string;
+  sessionVersion: number;
 }
 
 export async function register(
@@ -27,7 +28,11 @@ export async function register(
     data: { username, password: hashed },
   });
 
-  const token = generateToken({ userId: user.id, username: user.username });
+  const token = generateToken({
+    userId: user.id,
+    username: user.username,
+    sessionVersion: user.sessionVersion,
+  });
   return {
     token,
     user: { id: user.id, username: user.username, points: user.points },
@@ -45,11 +50,43 @@ export async function login(username: string, password: string) {
     throw new Error("INVALID_CREDENTIALS");
   }
 
-  const token = generateToken({ userId: user.id, username: user.username });
+  // Increment atomically so concurrent logins cannot both remain valid.
+  const activeUser = await prisma.user.update({
+    where: { id: user.id },
+    data: { sessionVersion: { increment: 1 } },
+    select: {
+      id: true,
+      username: true,
+      points: true,
+      sessionVersion: true,
+    },
+  });
+
+  const token = generateToken({
+    userId: activeUser.id,
+    username: activeUser.username,
+    sessionVersion: activeUser.sessionVersion,
+  });
   return {
     token,
-    user: { id: user.id, username: user.username, points: user.points },
+    user: {
+      id: activeUser.id,
+      username: activeUser.username,
+      points: activeUser.points,
+    },
+    sessionVersion: activeUser.sessionVersion,
   };
+}
+
+export async function logout(userId: string, sessionVersion: number) {
+  const result = await prisma.user.updateMany({
+    where: { id: userId, sessionVersion },
+    data: { sessionVersion: { increment: 1 } },
+  });
+  if (result.count !== 1) {
+    throw new Error("SESSION_INVALID");
+  }
+  return sessionVersion + 1;
 }
 
 export async function getMe(userId: string) {
@@ -65,5 +102,31 @@ export function generateToken(payload: JwtPayload): string {
 }
 
 export function verifyToken(token: string): JwtPayload {
-  return jwt.verify(token, config.jwtSecret) as JwtPayload;
+  const decoded = jwt.verify(token, config.jwtSecret);
+  if (
+    typeof decoded !== "object" ||
+    decoded === null ||
+    typeof decoded.userId !== "string" ||
+    typeof decoded.username !== "string" ||
+    !Number.isInteger(decoded.sessionVersion)
+  ) {
+    throw new Error("INVALID_TOKEN");
+  }
+  return {
+    userId: decoded.userId,
+    username: decoded.username,
+    sessionVersion: decoded.sessionVersion,
+  };
+}
+
+export async function verifyActiveToken(token: string): Promise<JwtPayload> {
+  const payload = verifyToken(token);
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { sessionVersion: true },
+  });
+  if (!user || user.sessionVersion !== payload.sessionVersion) {
+    throw new Error("SESSION_INVALID");
+  }
+  return payload;
 }

@@ -12,6 +12,16 @@ rsync -avz --delete \
   --exclude node_modules --exclude .git --exclude dist --exclude deploy \
   ./texaspoker-server/ ${SERVER}:${REMOTE_DIR}/server/
 
+echo "==> 执行数据库迁移..."
+ssh ${SERVER} "sudo docker run --rm \
+  --add-host host.docker.internal:host-gateway \
+  --env-file ${REMOTE_DIR}/.env \
+  -v ${REMOTE_DIR}/server/prisma:/app/prisma:ro \
+  -v ${REMOTE_DIR}/server/package.json:/app/package.json:ro \
+  -v ${REMOTE_DIR}/server/package-lock.json:/app/package-lock.json:ro \
+  -w /app node:22-alpine \
+  sh -c 'npm ci --ignore-scripts --no-audit --no-fund && npx prisma migrate deploy'"
+
 echo "==> 同步前端 build 产物..."
 rsync -avz --delete \
   ./texaspoker-web/dist/ ${SERVER}:${REMOTE_DIR}/web/dist/

@@ -1,15 +1,15 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyToken, JwtPayload } from "./auth.service.js";
+import { verifyActiveToken, JwtPayload } from "./auth.service.js";
 
 export interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
 }
 
-export function authMiddleware(
+export async function authMiddleware(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction,
-) {
+): Promise<void> {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
     res.status(401).json({ error: "UNAUTHORIZED" });
@@ -18,7 +18,7 @@ export function authMiddleware(
 
   try {
     const token = header.slice(7);
-    req.user = verifyToken(token);
+    req.user = await verifyActiveToken(token);
     next();
   } catch {
     res.status(401).json({ error: "INVALID_TOKEN" });

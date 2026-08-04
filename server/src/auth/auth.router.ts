@@ -1,9 +1,14 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { register, login, getMe } from "./auth.service.js";
+import { register, login, logout, getMe } from "./auth.service.js";
 import { authMiddleware, AuthenticatedRequest } from "./auth.middleware.js";
 
-export const authRouter = Router();
+export type SessionInvalidationReason = "replaced" | "logout";
+export type SessionInvalidator = (
+  userId: string,
+  reason: SessionInvalidationReason,
+  minimumValidSessionVersion: number,
+) => void;
 
 const registerSchema = z.object({
   username: z
@@ -25,65 +30,101 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-authRouter.post("/register", async (req: Request, res: Response) => {
-  const parsed = registerSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res
-      .status(400)
-      .json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
-    return;
-  }
+export function createAuthRouter(
+  onSessionInvalidated: SessionInvalidator = () => {},
+) {
+  const authRouter = Router();
 
-  try {
-    const result = await register(
-      parsed.data.username,
-      parsed.data.password,
-      parsed.data.registerCode,
-    );
-    res.status(201).json(result);
-  } catch (err) {
-    if (err instanceof Error && err.message === "USERNAME_TAKEN") {
-      res.status(409).json({ error: "USERNAME_TAKEN" });
+  authRouter.post("/register", async (req: Request, res: Response) => {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
       return;
     }
-    if (err instanceof Error && err.message === "REGISTER_CODE_INVALID") {
-      res.status(400).json({ error: "REGISTER_CODE_INVALID" });
-      return;
-    }
-    res.status(500).json({ error: "INTERNAL_ERROR" });
-  }
-});
 
-authRouter.post("/login", async (req: Request, res: Response) => {
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res
-      .status(400)
-      .json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
-    return;
-  }
-
-  try {
-    const result = await login(parsed.data.username, parsed.data.password);
-    res.json(result);
-  } catch (err) {
-    if (err instanceof Error && err.message === "INVALID_CREDENTIALS") {
-      res.status(401).json({ error: "INVALID_CREDENTIALS" });
-      return;
-    }
-    res.status(500).json({ error: "INTERNAL_ERROR" });
-  }
-});
-
-authRouter.get(
-  "/me",
-  authMiddleware,
-  async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const user = await getMe(req.user!.userId);
-      res.json({ user });
-    } catch {
-      res.status(404).json({ error: "USER_NOT_FOUND" });
+      const result = await register(
+        parsed.data.username,
+        parsed.data.password,
+        parsed.data.registerCode,
+      );
+      res.status(201).json(result);
+    } catch (err) {
+      if (err instanceof Error && err.message === "USERNAME_TAKEN") {
+        res.status(409).json({ error: "USERNAME_TAKEN" });
+        return;
+      }
+      if (err instanceof Error && err.message === "REGISTER_CODE_INVALID") {
+        res.status(400).json({ error: "REGISTER_CODE_INVALID" });
+        return;
+      }
+      res.status(500).json({ error: "INTERNAL_ERROR" });
     }
-  },
-);
+  });
+
+  authRouter.post("/login", async (req: Request, res: Response) => {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: "VALIDATION_ERROR", details: parsed.error.issues });
+      return;
+    }
+
+    try {
+      const result = await login(parsed.data.username, parsed.data.password);
+      onSessionInvalidated(result.user.id, "replaced", result.sessionVersion);
+      res.json({ token: result.token, user: result.user });
+    } catch (err) {
+      if (err instanceof Error && err.message === "INVALID_CREDENTIALS") {
+        res.status(401).json({ error: "INVALID_CREDENTIALS" });
+        return;
+      }
+      res.status(500).json({ error: "INTERNAL_ERROR" });
+    }
+  });
+
+  authRouter.post(
+    "/logout",
+    authMiddleware,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const minimumValidSessionVersion = await logout(
+          req.user!.userId,
+          req.user!.sessionVersion,
+        );
+        onSessionInvalidated(
+          req.user!.userId,
+          "logout",
+          minimumValidSessionVersion,
+        );
+        res.status(204).send();
+      } catch (err) {
+        if (err instanceof Error && err.message === "SESSION_INVALID") {
+          res.status(401).json({ error: "INVALID_TOKEN" });
+          return;
+        }
+        res.status(500).json({ error: "INTERNAL_ERROR" });
+      }
+    },
+  );
+
+  authRouter.get(
+    "/me",
+    authMiddleware,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const user = await getMe(req.user!.userId);
+        res.json({ user });
+      } catch {
+        res.status(404).json({ error: "USER_NOT_FOUND" });
+      }
+    },
+  );
+
+  return authRouter;
+}
+
+export const authRouter = createAuthRouter();

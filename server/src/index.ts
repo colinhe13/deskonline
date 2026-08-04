@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer } from "http";
 import { config } from "./config.js";
-import { authRouter } from "./auth/auth.router.js";
+import { createAuthRouter } from "./auth/auth.router.js";
 import { createLeaderboardRouter } from "./leaderboard/leaderboard.router.js";
 import { WebSocketGateway } from "./ws/gateway.js";
 import { ensureAiAccounts } from "./ai/accounts.js";
@@ -14,10 +14,14 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.use("/api/auth", authRouter);
-
 const server = createServer(app);
 const gateway = new WebSocketGateway(server);
+app.use(
+  "/api/auth",
+  createAuthRouter((userId, reason, minimumValidSessionVersion) => {
+    gateway.disconnectUser(userId, reason, minimumValidSessionVersion);
+  }),
+);
 app.use("/api/leaderboard", createLeaderboardRouter(gateway));
 
 async function startServer() {
