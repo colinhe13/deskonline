@@ -28,9 +28,9 @@ model User {
 model AiPersona {
   id            String   @id @default(uuid())
   slug          String   @unique @db.VarChar(32)
-  displayName   String   @db.VarChar(32)
-  styleLabel    String   @db.VarChar(32)
-  promptSection String
+  displayName   String   @map("display_name") @db.VarChar(32)
+  styleLabel    String   @map("style_label") @db.VarChar(32)
+  promptSection String   @map("prompt_section")
   temperature   Float    @default(0.7)
   bluffHintRate Float    @default(0) @map("bluff_hint_rate")
   createdAt     DateTime @default(now()) @map("created_at")
