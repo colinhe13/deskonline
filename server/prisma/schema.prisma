@@ -17,7 +17,8 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  buyInHolds BuyInHold[]
+  buyInHolds         BuyInHold[]
+  pointsTransactions PointsTransaction[]
 
   @@map("users")
 }
@@ -38,4 +39,18 @@ model BuyInHold {
   @@index([roomId, status])
   @@index([userId, status])
   @@map("buy_in_holds")
+}
+
+model PointsTransaction {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  delta        Int
+  balanceAfter Int      @map("balance_after")
+  type         String   @db.VarChar(16)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("points_transactions")
 }

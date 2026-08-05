@@ -1,6 +1,9 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../db/client.js";
 
 type OpenHoldStatus = "pending" | "active";
+
+export type PointsTxType = "buy_in" | "refund" | "settle";
 
 interface BuyInHoldInput {
   operationId: string;
@@ -13,20 +16,31 @@ interface BuyInHoldInput {
 export async function deductPoints(
   userId: string,
   amount: number,
+  type: PointsTxType = "buy_in",
 ): Promise<void> {
-  const result = await prisma.user.updateMany({
-    where: { id: userId, points: { gte: amount } },
-    data: { points: { decrement: amount } },
+  await prisma.$transaction(async (tx) => {
+    const result = await tx.user.updateMany({
+      where: { id: userId, points: { gte: amount } },
+      data: { points: { decrement: amount } },
+    });
+    if (result.count === 0) {
+      throw new Error("INSUFFICIENT_POINTS");
+    }
+    await recordPointsDelta(tx, userId, -amount, type);
   });
-  if (result.count === 0) {
-    throw new Error("INSUFFICIENT_POINTS");
-  }
 }
 
-export async function addPoints(userId: string, amount: number): Promise<void> {
-  await prisma.user.update({
-    where: { id: userId },
-    data: { points: { increment: amount } },
+export async function addPoints(
+  userId: string,
+  amount: number,
+  type: PointsTxType = "refund",
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { points: { increment: amount } },
+    });
+    await recordPointsDelta(tx, userId, amount, type);
   });
 }
 
@@ -51,6 +65,8 @@ export async function createBuyInHold(input: BuyInHoldInput): Promise<void> {
     if (result.count === 0) {
       throw new Error("INSUFFICIENT_POINTS");
     }
+
+    await recordPointsDelta(tx, input.userId, -input.amount, "buy_in");
 
     await tx.buyInHold.create({
       data: {
@@ -111,6 +127,7 @@ export async function refundBuyInHold(operationId: string): Promise<boolean> {
         where: { id: hold.userId },
         data: { points: { increment: hold.amount } },
       });
+      await recordPointsDelta(tx, hold.userId, hold.amount, "refund");
     }
     return true;
   });
@@ -143,6 +160,7 @@ export async function settleBuyInHold(
         where: { id: hold.userId },
         data: { points: { increment: finalAmount } },
       });
+      await recordPointsDelta(tx, hold.userId, finalAmount, "settle");
     }
     return true;
   });
@@ -173,10 +191,30 @@ export async function recoverUnsettledBuyInHolds(): Promise<number> {
           where: { id: hold.userId },
           data: { points: { increment: hold.amount } },
         });
+        await recordPointsDelta(tx, hold.userId, hold.amount, "refund");
       }
       recovered++;
     }
     return recovered;
+  });
+}
+
+// balanceAfter is read inside the same transaction right after the balance
+// mutation, so the ledger stays auditable and consistent with the balance.
+async function recordPointsDelta(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  delta: number,
+  type: PointsTxType,
+): Promise<void> {
+  if (delta === 0) return;
+  const user = await tx.user.findUnique({
+    where: { id: userId },
+    select: { points: true },
+  });
+  if (!user) throw new Error("USER_NOT_FOUND");
+  await tx.pointsTransaction.create({
+    data: { userId, delta, balanceAfter: user.points, type },
   });
 }
 
