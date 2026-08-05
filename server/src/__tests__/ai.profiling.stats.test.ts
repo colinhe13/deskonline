@@ -238,4 +238,94 @@ describe("applyHandToStats", () => {
     applyHandToStats(stats, record([action("preflop", "u1", "fold")]), "u1");
     expect(computeRates(stats).wtsd).toBe(50);
   });
+
+  it("counts a fold to the flop c-bet as foldToCbet", () => {
+    const stats = createStats();
+    applyHandToStats(
+      stats,
+      record([
+        action("preflop", "u1", "raise", 5),
+        action("preflop", "u2", "call", 5),
+        action("flop", "u1", "raise", 8),
+        action("flop", "u2", "fold"),
+      ]),
+      "u2",
+    );
+    expect(stats.foldToCbetOpps).toBe(1);
+    expect(stats.foldToCbetFolds).toBe(1);
+    expect(computeRates(stats).foldToCbet).toBe(100);
+  });
+
+  it("calling the flop c-bet is an opportunity but not a fold", () => {
+    const stats = createStats();
+    applyHandToStats(
+      stats,
+      record([
+        action("flop", "u1", "raise", 8),
+        action("flop", "u2", "call", 8),
+      ]),
+      "u2",
+    );
+    expect(stats.foldToCbetOpps).toBe(1);
+    expect(stats.foldToCbetFolds).toBe(0);
+    expect(computeRates(stats).foldToCbet).toBe(0);
+  });
+
+  it("the c-bettor himself has no fold-to-c-bet opportunity", () => {
+    const stats = createStats();
+    applyHandToStats(
+      stats,
+      record([action("flop", "u1", "raise", 8), action("flop", "u2", "fold")]),
+      "u1",
+    );
+    expect(stats.foldToCbetOpps).toBe(0);
+  });
+
+  it("turn and river bets are not c-bets", () => {
+    const stats = createStats();
+    applyHandToStats(
+      stats,
+      record([
+        action("flop", "u1", "check"),
+        action("flop", "u2", "check"),
+        action("turn", "u1", "raise", 10),
+        action("turn", "u2", "fold"),
+        action("river", "u1", "raise", 10),
+      ]),
+      "u2",
+    );
+    expect(stats.foldToCbetOpps).toBe(0);
+    expect(computeRates(stats).foldToCbet).toBeNull();
+  });
+
+  it("only the first flop response counts; later barrels do not reopen", () => {
+    const stats = createStats();
+    applyHandToStats(
+      stats,
+      record([
+        action("flop", "u1", "raise", 8),
+        action("flop", "u2", "call", 8),
+        action("turn", "u1", "raise", 20),
+        action("turn", "u2", "fold"),
+      ]),
+      "u2",
+    );
+    expect(stats.foldToCbetOpps).toBe(1);
+    expect(stats.foldToCbetFolds).toBe(0);
+  });
+
+  it("a checked-around flop followed by a late flop bet still counts", () => {
+    const stats = createStats();
+    applyHandToStats(
+      stats,
+      record([
+        action("flop", "u2", "check"),
+        action("flop", "u1", "raise", 8),
+        action("flop", "u2", "fold"),
+      ]),
+      "u2",
+    );
+    expect(stats.foldToCbetOpps).toBe(1);
+    expect(stats.foldToCbetFolds).toBe(1);
+  });
 });

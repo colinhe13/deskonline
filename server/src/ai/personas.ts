@@ -71,9 +71,7 @@ const personaByUserId = new Map<string, AiPersonaView>();
 
 // Idempotent startup seed: upsert by slug, overwriting all fields so a redeploy
 // refreshes persona text. Called from ensureAiAccounts.
-export async function ensureAiPersonas(): Promise<
-  Map<string, AiPersonaView>
-> {
+export async function ensureAiPersonas(): Promise<Map<string, AiPersonaView>> {
   for (const seed of PERSONA_SEEDS) {
     const { slug, ...fields } = seed;
     const row = await prisma.aiPersona.upsert({

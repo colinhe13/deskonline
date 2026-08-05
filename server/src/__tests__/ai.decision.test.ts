@@ -8,8 +8,13 @@ vi.mock("../ai/llm.client.js", () => ({
   callLlm: vi.fn(),
 }));
 
-import { decideAiAction, fallbackAction } from "../ai/decision.js";
+import {
+  decideAiAction,
+  fallbackAction,
+  setAiDecisionRngForTests,
+} from "../ai/decision.js";
 import { callLlm } from "../ai/llm.client.js";
+import { bindUserPersona, resetPersonasForTests } from "../ai/personas.js";
 import type { GameState, ActionOption } from "../poker/types.js";
 
 function state(): GameState {
@@ -201,6 +206,7 @@ describe("decideAiAction", () => {
       threeBet: null,
       af: 1.5,
       foldToRaise: 50,
+      foldToCbet: null,
       wtsd: 25,
     },
     note: "翻前很紧",
@@ -221,5 +227,66 @@ describe("decideAiAction", () => {
     ]);
     const userContent = vi.mocked(callLlm).mock.calls[0][1];
     expect(userContent).not.toContain("opponentProfiles");
+  });
+});
+
+describe("decideAiAction persona injection", () => {
+  const maniac = {
+    id: "p1",
+    slug: "maniac",
+    displayName: "疯狂型",
+    styleLabel: "MANIAC",
+    promptSection: "你是一名疯狂型玩家PERSONA_MARKER。",
+    temperature: 1.0,
+    bluffHintRate: 0.4,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetPersonasForTests();
+    bindUserPersona("ai1", maniac);
+  });
+
+  afterEach(() => {
+    setAiDecisionRngForTests();
+    resetPersonasForTests();
+  });
+
+  it("uses the persona system prompt and temperature", async () => {
+    setAiDecisionRngForTests(() => 0.999); // no bluff directive
+    vi.mocked(callLlm).mockResolvedValue({ action: "check", amount: 0 });
+    await decideAiAction(state(), "ai1", withCheck);
+    const [systemPrompt, , opts] = vi.mocked(callLlm).mock.calls[0];
+    expect(systemPrompt).toContain("PERSONA_MARKER");
+    expect(systemPrompt).toContain("你的人格设定");
+    expect(opts).toMatchObject({ temperature: 1.0 });
+  });
+
+  it("injects the bluff directive when the roll lands under bluffHintRate", async () => {
+    setAiDecisionRngForTests(() => 0.1);
+    vi.mocked(callLlm).mockResolvedValue({ action: "check", amount: 0 });
+    await decideAiAction(state(), "ai1", withCheck);
+    const userContent = vi.mocked(callLlm).mock.calls[0][1];
+    expect(userContent).toContain("handDirective");
+    expect(userContent).toContain("诈唬线路");
+  });
+
+  it("skips the bluff directive when the roll lands above bluffHintRate", async () => {
+    setAiDecisionRngForTests(() => 0.9);
+    vi.mocked(callLlm).mockResolvedValue({ action: "check", amount: 0 });
+    await decideAiAction(state(), "ai1", withCheck);
+    const userContent = vi.mocked(callLlm).mock.calls[0][1];
+    expect(userContent).not.toContain("handDirective");
+  });
+
+  it("falls back to the base prompt without temperature override for unbound users", async () => {
+    setAiDecisionRngForTests(() => 0); // would fire if a persona existed
+    vi.mocked(callLlm).mockResolvedValue({ action: "check", amount: 0 });
+    await decideAiAction(state(), "u2", withCheck);
+    const [systemPrompt, userContent, opts] = vi.mocked(callLlm).mock.calls[0];
+    expect(systemPrompt).not.toContain("## 你的人格设定");
+    expect(systemPrompt).not.toContain("PERSONA_MARKER");
+    expect(userContent).not.toContain("handDirective");
+    expect(opts?.temperature).toBeUndefined();
   });
 });

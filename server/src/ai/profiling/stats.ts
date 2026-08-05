@@ -66,11 +66,7 @@ export function applyHandToStats(
       if (a.action === "fold") stats.foldToCbetFolds += 1;
     }
 
-    if (
-      street === "flop" &&
-      !cbetFired &&
-      AGGRESSIVE.has(a.action)
-    ) {
+    if (street === "flop" && !cbetFired && AGGRESSIVE.has(a.action)) {
       cbetFired = true;
       cbettor = a.userId;
     }

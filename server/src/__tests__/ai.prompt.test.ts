@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildDecisionContext, GTO_SYSTEM_PROMPT } from "../ai/prompt.js";
+import {
+  buildDecisionContext,
+  buildSystemPrompt,
+  GTO_SYSTEM_PROMPT,
+} from "../ai/prompt.js";
+import type { AiPersonaView } from "../ai/personas.js";
 import type { GameState, PlayerState } from "../poker/types.js";
 
 function player(overrides: Partial<PlayerState>): PlayerState {
@@ -200,6 +205,7 @@ describe("buildDecisionContext opponent profiles", () => {
       threeBet: 10,
       af: 2.5,
       foldToRaise: 60,
+      foldToCbet: 70,
       wtsd: 30,
     },
     note: "翻前偏紧，河牌爱抓诈唬",
@@ -241,5 +247,82 @@ describe("buildDecisionContext opponent profiles", () => {
     const ctx = buildDecisionContext(state(), "ai1", [readyProfile]);
     const serialized = JSON.stringify(ctx.opponentProfiles);
     expect(serialized).not.toMatch(/[2-9TJQKA][hdcs]\b/);
+  });
+
+  it("guidance is exploitative, not conservative", () => {
+    const ctx = buildDecisionContext(state(), "ai1", [readyProfile]);
+    const guidance = ctx.opponentProfileGuidance as string;
+    expect(guidance).toContain("剥削");
+    expect(guidance).toContain("剥削策略");
+    expect(guidance).not.toContain("不要过度偏离");
+    expect(guidance).not.toContain("仅供参考");
+    expect(guidance).not.toContain("谨慎");
+  });
+});
+
+describe("GTO_SYSTEM_PROMPT strategy sections", () => {
+  it("covers the four GTO pillars", () => {
+    expect(GTO_SYSTEM_PROMPT).toContain("GTO 核心支柱");
+    expect(GTO_SYSTEM_PROMPT).toContain("无差异原则");
+    expect(GTO_SYSTEM_PROMPT).toContain("范围平衡");
+    expect(GTO_SYSTEM_PROMPT).toContain("极化与线性");
+    expect(GTO_SYSTEM_PROMPT).toContain("最低防守频率");
+    expect(GTO_SYSTEM_PROMPT).toContain("混合策略");
+  });
+
+  it("has a storyline-consistency chapter", () => {
+    expect(GTO_SYSTEM_PROMPT).toContain("故事线一致性");
+    expect(GTO_SYSTEM_PROMPT).toContain("价值线 / 诈唬线 / 控池线 / 放弃线");
+  });
+
+  it("has an exploit chapter with quantified rules incl. foldToCbet", () => {
+    expect(GTO_SYSTEM_PROMPT).toContain("剥削策略（偏离 GTO）");
+    expect(GTO_SYSTEM_PROMPT).toContain("foldToCbet ≥ 60%");
+    expect(GTO_SYSTEM_PROMPT).toContain("foldToRaise ≥ 60%");
+    expect(GTO_SYSTEM_PROMPT).toContain("WTSD ≥ 50%");
+    expect(GTO_SYSTEM_PROMPT).toContain("stats.hands ≥ 15");
+  });
+
+  it("keeps the exact five-action JSON contract", () => {
+    expect(GTO_SYSTEM_PROMPT).toContain(
+      '{"action":"fold|check|call|raise|allin","amount":0}',
+    );
+  });
+});
+
+describe("buildSystemPrompt", () => {
+  const persona: AiPersonaView = {
+    id: "p1",
+    slug: "loose-aggressive",
+    displayName: "松凶",
+    styleLabel: "LAG",
+    promptSection: "你是一名松凶（LAG）玩家。测试人格段落。",
+    temperature: 0.9,
+    bluffHintRate: 0.3,
+  };
+
+  it("returns the base prompt unchanged without a persona", () => {
+    expect(buildSystemPrompt()).toBe(GTO_SYSTEM_PROMPT);
+    expect(buildSystemPrompt(null)).toBe(GTO_SYSTEM_PROMPT);
+  });
+
+  it("appends the persona section last with a conflict rule", () => {
+    const prompt = buildSystemPrompt(persona);
+    expect(prompt).toContain("## 你的人格设定");
+    expect(prompt).toContain(persona.promptSection);
+    const personaIdx = prompt.indexOf(persona.promptSection);
+    const frameworkIdx = prompt.indexOf("## 决策原则");
+    expect(personaIdx).toBeGreaterThan(frameworkIdx);
+    expect(personaIdx).toBeGreaterThan(prompt.indexOf("## 剥削策略"));
+    // Conflict rule: frequency → persona, format → framework.
+    expect(prompt).toContain("频率类指令");
+    expect(prompt).toContain("以人格为准");
+  });
+
+  it("keeps the output contract intact in persona prompts", () => {
+    const prompt = buildSystemPrompt(persona);
+    expect(prompt).toContain(
+      '{"action":"fold|check|call|raise|allin","amount":0}',
+    );
   });
 });
