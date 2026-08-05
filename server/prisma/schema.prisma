@@ -14,13 +14,31 @@ model User {
   points         Int      @default(10000)
   sessionVersion Int      @default(0) @map("session_version")
   isAi           Boolean  @default(false) @map("is_ai")
+  personaId      String?  @map("persona_id")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
+  persona        AiPersona?       @relation(fields: [personaId], references: [id])
   buyInHolds         BuyInHold[]
   pointsTransactions PointsTransaction[]
 
   @@map("users")
+}
+
+model AiPersona {
+  id            String   @id @default(uuid())
+  slug          String   @unique @db.VarChar(32)
+  displayName   String   @db.VarChar(32)
+  styleLabel    String   @db.VarChar(32)
+  promptSection String
+  temperature   Float    @default(0.7)
+  bluffHintRate Float    @default(0) @map("bluff_hint_rate")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  users User[]
+
+  @@map("ai_personas")
 }
 
 model BuyInHold {
