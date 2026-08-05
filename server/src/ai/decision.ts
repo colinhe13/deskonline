@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { GameState, ActionOption, PlayerActionType } from "../poker/types.js";
-import { buildDecisionContext, GTO_SYSTEM_PROMPT } from "./prompt.js";
+import { buildDecisionContext, buildSystemPrompt } from "./prompt.js";
 import { callLlm } from "./llm.client.js";
 import { config } from "../config.js";
 import { recordAiDecision, AiFailReason } from "./stats.js";
+import { personaOfUser } from "./personas.js";
 import type { ProfileView } from "./profiling/types.js";
 
 export interface AiAction {
@@ -23,6 +24,16 @@ const ACTION_ALIASES: Record<string, string> = {
   "all-in": "allin",
   all_in: "allin",
 };
+
+const HAND_DIRECTIVE_BLUFF =
+  "本手牌面允许时，倾向选择诈唬线路：选一条可代表的强牌故事线并贯彻到底。";
+
+// Server-side dice for the per-hand bluff directive. Injectable so tests can
+// pin the outcome; defaults to Math.random in production.
+let decisionRng: () => number = Math.random;
+export function setAiDecisionRngForTests(rng?: () => number): void {
+  decisionRng = rng ?? Math.random;
+}
 
 function normalizeRaw(raw: Record<string, unknown>): Record<string, unknown> {
   const action =
@@ -71,11 +82,19 @@ export async function decideAiAction(
 ): Promise<AiAction> {
   const fallback = fallbackAction(availableActions);
   const me = state.players.find((p) => p.userId === userId);
+  const persona = personaOfUser(userId);
+  // Server-side roll, independent of LLM sampling: with persona probability
+  // inject a bluff-line directive into this hand's context.
+  const handDirective =
+    persona !== null && decisionRng() < persona.bluffHintRate;
+
   const meta = {
     username: me?.username ?? userId,
     phase: state.phase,
     handNo: state.handNumber,
     toCall: me ? Math.max(0, state.currentBet - me.bet) : 0,
+    personaSlug: persona?.slug,
+    handDirective,
   };
   const finish = (
     result: AiAction,
@@ -95,6 +114,7 @@ export async function decideAiAction(
 
   try {
     const context = buildDecisionContext(state, userId, opponentProfiles);
+    if (handDirective) context.handDirective = HAND_DIRECTIVE_BLUFF;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Grace margin over the fetch-level abort so the outer race is the
@@ -103,7 +123,9 @@ export async function decideAiAction(
       timer = setTimeout(() => resolve(null), config.aiTimeoutMs + 500);
     });
     const raw = await Promise.race([
-      callLlm(GTO_SYSTEM_PROMPT, JSON.stringify(context)),
+      callLlm(buildSystemPrompt(persona), JSON.stringify(context), {
+        temperature: persona?.temperature,
+      }),
       timeout,
     ]);
     if (timer) clearTimeout(timer);

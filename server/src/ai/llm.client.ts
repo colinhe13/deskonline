@@ -18,7 +18,7 @@ function stripFences(text: string): string {
 export async function callLlm(
   systemPrompt: string,
   userContent: string,
-  opts?: { maxTokens?: number; timeoutMs?: number },
+  opts?: { maxTokens?: number; timeoutMs?: number; temperature?: number },
 ): Promise<Record<string, unknown> | null> {
   const controller = new AbortController();
   const timeoutMs = opts?.timeoutMs ?? config.aiTimeoutMs;
@@ -38,7 +38,7 @@ export async function callLlm(
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
-        temperature: 0.3,
+        temperature: opts?.temperature ?? 0.3,
         max_tokens: opts?.maxTokens ?? 200,
         // deepseek-v4-flash is a reasoning model: its thinking tokens would
         // consume the whole max_tokens budget and leave content empty.

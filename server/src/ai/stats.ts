@@ -13,6 +13,8 @@ export interface AiDecisionRecord {
   failReason?: AiFailReason;
   llmRaw?: string;
   finalAction: PlayerActionType;
+  personaSlug?: string;
+  handDirective?: boolean;
 }
 
 export interface AiStats {
@@ -73,8 +75,10 @@ export function recordAiDecision(rec: AiDecisionRecord): void {
 
   const raw = rec.llmRaw ? ` raw=${rec.llmRaw}` : "";
   const reason = rec.failReason ? ` reason=${rec.failReason}` : "";
+  const persona = rec.personaSlug ? ` persona=${rec.personaSlug}` : "";
+  const hint = rec.handDirective ? " bluffHint" : "";
   console.info(
-    `[ai][decision] ${rec.username} hand=${rec.handNo} phase=${rec.phase} toCall=${rec.toCall} src=${rec.source}${reason}${raw} -> ${rec.finalAction}`,
+    `[ai][decision] ${rec.username} hand=${rec.handNo} phase=${rec.phase} toCall=${rec.toCall}${persona}${hint} src=${rec.source}${reason}${raw} -> ${rec.finalAction}`,
   );
 
   const s = stats;
