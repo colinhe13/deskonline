@@ -2,6 +2,9 @@
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal">
       <h2>积分排行榜</h2>
+      <p class="board-note">
+        今日变化 = 当日积分余额净变动（北京时间 0 点起算）
+      </p>
       <p v-if="loading" class="board-status">加载中…</p>
       <p v-else-if="error" class="board-status error">{{ error }}</p>
       <ol v-else class="board">
@@ -15,6 +18,9 @@
           <span class="name">
             {{ entry.username }}
             <span v-if="entry.isAi" class="ai-badge">AI</span>
+          </span>
+          <span class="daily" :class="dailyClass(entry.dailyDelta)">
+            {{ formatDaily(entry.dailyDelta) }}
           </span>
           <span class="total">{{ entry.total }}</span>
         </li>
@@ -38,9 +44,21 @@ interface LeaderboardEntry {
   username: string;
   isAi: boolean;
   total: number;
+  dailyDelta: number;
 }
 
 defineEmits<{ close: [] }>();
+
+function formatDaily(delta: number): string {
+  if (delta > 0) return `+${delta}`;
+  return String(delta);
+}
+
+function dailyClass(delta: number): string {
+  if (delta > 0) return "daily-up";
+  if (delta < 0) return "daily-down";
+  return "daily-flat";
+}
 
 const entries = ref<LeaderboardEntry[]>([]);
 const loading = ref(true);
@@ -148,6 +166,27 @@ onMounted(async () => {
 .total {
   font-weight: 600;
   color: var(--gold-soft);
+}
+.daily {
+  flex: none;
+  width: 6.5ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+}
+.daily-up {
+  color: var(--success);
+}
+.daily-down {
+  color: var(--danger);
+}
+.daily-flat {
+  color: var(--text-dim);
+}
+.board-note {
+  margin: -0.6rem 0 0.8rem;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
 }
 .modal-actions {
   display: flex;

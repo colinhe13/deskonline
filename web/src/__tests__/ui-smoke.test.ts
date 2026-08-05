@@ -568,6 +568,7 @@ describe("UI smoke（SSR 渲染边界对抗）", () => {
     expect(html).toContain("积分排行榜");
     expect(html).toContain("加载中");
     expect(html).toContain("关闭");
+    expect(html).toContain("今日变化 = 当日积分余额净变动");
   });
 
   it("ConfirmBuyIn：边界金额校验渲染", async () => {
