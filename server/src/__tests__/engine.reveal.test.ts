@@ -208,6 +208,77 @@ describe("AI fold win reveal", () => {
   });
 });
 
+describe("fold win settled broadcast", () => {
+  function updatesAfterResult(
+    broadcasts: { type: string; payload: unknown }[],
+  ) {
+    const resultIdx = broadcasts.findIndex(
+      (b) => b.type === "poker:hand_result",
+    );
+    expect(resultIdx).toBeGreaterThanOrEqual(0);
+    return broadcasts
+      .slice(resultIdx + 1)
+      .filter((b) => b.type === "poker:update");
+  }
+
+  it("human fold win broadcasts a settled snapshot with folded flags", () => {
+    const { engine, broadcasts } = makeEngine(3, 0);
+    engine.startHand();
+    expect(engine.handleAction("u0", "allin", 1000)).toBe(true);
+    expect(engine.handleAction("u1", "fold")).toBe(true);
+    expect(engine.handleAction("u2", "fold")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+
+    const updates = updatesAfterResult(broadcasts);
+    expect(updates).toHaveLength(3); // one view per seated player
+
+    for (const u of updates) {
+      const payload = u.payload as {
+        targetUserId: string;
+        state: {
+          phase: string;
+          players: {
+            userId: string;
+            folded: boolean;
+            chips: number;
+            cards: unknown[];
+          }[];
+        };
+      };
+      expect(payload.state.phase).toBe("settled");
+      const byId = Object.fromEntries(
+        payload.state.players.map((p) => [p.userId, p]),
+      );
+      expect(byId.u1.folded).toBe(true);
+      expect(byId.u2.folded).toBe(true);
+      expect(byId.u0.folded).toBe(false);
+      expect(byId.u0.chips).toBe(1003); // all-in 1000 + SB 1 + BB 2
+      // Winner's cards stay private in every opponent view
+      if (payload.targetUserId !== "u0") {
+        expect(byId.u0.cards).toHaveLength(0);
+      }
+    }
+    const winner = engine.getState().players.find((p) => p.userId === "u0")!;
+    expect(winner.chips).toBe(1003);
+  });
+
+  it("server-side fold (leave) of the last opponent also broadcasts", () => {
+    const { engine, broadcasts } = makeEngine(2, 0);
+    engine.startHand();
+    // Heads-up: u0 is SB/dealer and acts first; u1 folds via leave.
+    expect(engine.foldPlayer("u1")).toBe(true);
+    expect(engine.getState().phase).toBe("settled");
+
+    const updates = updatesAfterResult(broadcasts);
+    expect(updates).toHaveLength(2);
+    const payload = updates[0].payload as {
+      state: { players: { userId: string; folded: boolean }[] };
+    };
+    const folder = payload.state.players.find((p) => p.userId === "u1")!;
+    expect(folder.folded).toBe(true);
+  });
+});
+
 describe("getRevealedHandName", () => {
   it("returns null before reveal and for unknown players", () => {
     const { engine } = makeEngine(3, 0);

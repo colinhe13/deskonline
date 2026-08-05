@@ -452,10 +452,11 @@ export class PokerEngine {
       };
       this.lastHandWinners = new Set([winner.userId]);
       this.onBroadcast("poker:hand_result", result);
-      if (winner.isAi) {
-        winner.cardsRevealed = true;
-        this.broadcastState();
-      }
+      // AI winners always reveal so the table can see what they were holding.
+      if (winner.isAi) winner.cardsRevealed = true;
+      // The callers return right after settling, so this is the only chance
+      // clients get the settled snapshot (fold badges, updated chips).
+      this.broadcastState();
       return;
     }
 
