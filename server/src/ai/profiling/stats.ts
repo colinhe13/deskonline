@@ -12,6 +12,8 @@ export function createStats(): PlayerStats {
     postflopCalls: 0,
     foldToRaiseOpps: 0,
     foldToRaiseFolds: 0,
+    foldToCbetOpps: 0,
+    foldToCbetFolds: 0,
     showdownHands: 0,
   };
 }
@@ -39,11 +41,38 @@ export function applyHandToStats(
   const responded = new Set<string>();
   let street: StructuredAction["street"] = "preflop";
 
+  // Fold-to-c-bet bookkeeping: the first aggressive action on the flop is the
+  // c-bet; the hero's first response afterwards is one opportunity. Only the
+  // flop counts — turn/river barrels are excluded by design.
+  let cbetFired = false;
+  let cbettor: string | null = null;
+  let heroCbetResponded = false;
+
   for (const a of record.actions) {
     if (a.street !== street) {
       street = a.street;
       pendingRaiser = null;
       responded.clear();
+    }
+
+    if (
+      cbetFired &&
+      !heroCbetResponded &&
+      a.userId === userId &&
+      userId !== cbettor
+    ) {
+      heroCbetResponded = true;
+      stats.foldToCbetOpps += 1;
+      if (a.action === "fold") stats.foldToCbetFolds += 1;
+    }
+
+    if (
+      street === "flop" &&
+      !cbetFired &&
+      AGGRESSIVE.has(a.action)
+    ) {
+      cbetFired = true;
+      cbettor = a.userId;
     }
 
     if (a.userId === userId) {
@@ -103,6 +132,7 @@ export function computeRates(stats: PlayerStats): StatsDto {
         ? null
         : Math.round((stats.postflopAggr / stats.postflopCalls) * 100) / 100,
     foldToRaise: pct(stats.foldToRaiseFolds, stats.foldToRaiseOpps),
+    foldToCbet: pct(stats.foldToCbetFolds, stats.foldToCbetOpps),
     wtsd: pct(stats.showdownHands, stats.hands),
   };
 }

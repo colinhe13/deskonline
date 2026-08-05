@@ -23,6 +23,8 @@ export interface PlayerStats {
   postflopCalls: number;
   foldToRaiseOpps: number;
   foldToRaiseFolds: number;
+  foldToCbetOpps: number;
+  foldToCbetFolds: number;
   showdownHands: number;
 }
 
@@ -42,6 +44,7 @@ export interface StatsDto {
   threeBet: number | null;
   af: number | null;
   foldToRaise: number | null;
+  foldToCbet: number | null;
   wtsd: number | null;
 }
 
