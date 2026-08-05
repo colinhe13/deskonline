@@ -803,7 +803,7 @@ onUnmounted(() => {
 }
 @media (max-width: 768px) {
   .table-main {
-    padding-bottom: 100px;
+    padding-bottom: 120px;
   }
   .chat-container {
     position: fixed;

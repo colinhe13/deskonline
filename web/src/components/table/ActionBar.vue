@@ -460,19 +460,27 @@ function handleAction(action: ActionOption) {
 
 @media (max-width: 480px) {
   .action-bar {
-    padding: 0.7rem 0.6rem;
-    padding-bottom: calc(0.7rem + env(safe-area-inset-bottom));
+    padding: 0.85rem 0.75rem;
+    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom));
   }
   .actions {
-    gap: 0.4rem;
+    gap: 0.65rem;
   }
-  .action-btn {
-    padding: 0.6rem 0.85rem;
-    font-size: var(--fs-sm);
-    min-height: 44px;
+  .actions .action-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.8rem 0.4rem;
+    min-height: 48px;
+    font-size: var(--fs-md);
+    white-space: nowrap;
+  }
+  .raise-panel .actions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
   }
   .raise-control input {
-    max-width: 150px;
+    min-height: 48px;
+    max-width: 180px;
   }
 }
 </style>
