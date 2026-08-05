@@ -2,6 +2,12 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "../db/client.js";
 import { config } from "../config.js";
+import {
+  bindUserPersona,
+  ensureAiPersonas,
+  personaForPoolIndex,
+  personaViewBySlug,
+} from "./personas.js";
 
 export interface AiAccount {
   id: string;
@@ -20,27 +26,44 @@ function poolUsernames(): string[] {
 }
 
 // Idempotent: creates missing pool accounts and marks them isAi. Called once
-// at startup so deployment never needs a manual seed step.
+// at startup so deployment never needs a manual seed step. Accounts are bound
+// to personas by pool order (index % seed count); existing accounts missing a
+// persona are backfilled.
 export async function ensureAiAccounts(): Promise<void> {
-  for (const username of poolUsernames()) {
+  await ensureAiPersonas();
+  const usernames = poolUsernames();
+  for (let i = 0; i < usernames.length; i++) {
+    const username = usernames[i];
+    const seed = personaForPoolIndex(i);
+    const persona = personaViewBySlug(seed.slug);
     const existing = await prisma.user.findUnique({ where: { username } });
     if (!existing) {
       // Random password: AI accounts are never meant to be logged into.
       const hashed = await bcrypt.hash(randomBytes(32).toString("hex"), 12);
       const created = await prisma.user.create({
-        data: { username, password: hashed, isAi: true },
+        data: {
+          username,
+          password: hashed,
+          isAi: true,
+          personaId: persona?.id ?? null,
+        },
       });
       pool.push({ id: created.id, username: created.username });
       aiFlagCache.set(created.id, true);
+      if (persona) bindUserPersona(created.id, persona);
     } else {
-      if (!existing.isAi) {
+      if (!existing.isAi || !existing.personaId) {
         await prisma.user.update({
           where: { id: existing.id },
-          data: { isAi: true },
+          data: {
+            isAi: true,
+            ...(existing.personaId ? {} : { personaId: persona?.id ?? null }),
+          },
         });
       }
       pool.push({ id: existing.id, username: existing.username });
       aiFlagCache.set(existing.id, true);
+      if (persona) bindUserPersona(existing.id, persona);
     }
   }
 }

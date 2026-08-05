@@ -8,6 +8,9 @@ vi.mock("../db/client.js", () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    aiPersona: {
+      upsert: vi.fn(),
+    },
   },
 }));
 
@@ -129,6 +132,10 @@ describe("lobby AI lifecycle", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.mocked(prisma.aiPersona.upsert).mockImplementation(
+      async (args: { create: Record<string, unknown> }) =>
+        ({ id: `persona-${args.create.slug}`, ...args.create }) as never,
+    );
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
     vi.mocked(prisma.user.create).mockImplementation(
       async (args: { data: { username: string } }) =>
