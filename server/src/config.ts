@@ -27,4 +27,10 @@ export const config = {
     process.env.AI_PROFILE_SUMMARY_EVERY || "10",
     10,
   ),
+  aiRecentHandsWindow: parseInt(process.env.AI_RECENT_HANDS_WINDOW || "8", 10),
+  aiRecentHandsInContext: parseInt(
+    process.env.AI_RECENT_HANDS_IN_CONTEXT || "3",
+    10,
+  ),
+  aiSelfStatsWindow: parseInt(process.env.AI_SELF_STATS_WINDOW || "20", 10),
 };
