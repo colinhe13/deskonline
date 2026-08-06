@@ -25,8 +25,11 @@ import { recordAiDecision } from "../ai/stats.js";
 import { buildHandRecord } from "../ai/profiling/handRecord.js";
 import { profileStore } from "../ai/profiling/store.js";
 import { summarizeOpponent } from "../ai/profiling/summarizer.js";
+import type { HandRecord } from "../ai/profiling/types.js";
+import { evaluateHandForUser } from "../ai/selfreview/evaluate.js";
+import { selfReviewStore } from "../ai/selfreview/store.js";
 import { config } from "../config.js";
-import { ActionOption, PlayerActionType } from "../poker/types.js";
+import { ActionOption, GameState, PlayerActionType } from "../poker/types.js";
 import {
   ChatMessage,
   MAX_CHAT_LENGTH,
@@ -444,11 +447,24 @@ export class LobbyHandler {
           const seat = room.findSeatByUserId(p.userId);
           if (seat) seat.chips = p.chips;
         }
+        // Built once and shared by profiling and AI self-review.
+        let record: HandRecord | null = null;
         try {
-          this.collectHandForProfiling(room, engine, payload as HandResult);
+          record = buildHandRecord(
+            engine.getHandHistory(),
+            payload as HandResult,
+            state.handNumber,
+          );
+          this.collectHandForProfiling(room, state, record);
         } catch (err) {
           // Profiling must never disturb settlement or the next hand.
           console.error("[profiling] hand collection failed", err);
+        }
+        try {
+          if (record) this.collectHandForSelfReview(room, state, record);
+        } catch (err) {
+          // Self-review must never disturb settlement or the next hand.
+          console.error("[selfreview] hand collection failed", err);
         }
       }
       // Busted humans become unconfirmed (their client shows the rebuy
@@ -662,26 +678,49 @@ export class LobbyHandler {
   // asynchronously and never blocks the game loop.
   private collectHandForProfiling(
     room: Room,
-    engine: PokerEngine,
-    result: HandResult,
+    state: GameState,
+    record: HandRecord,
   ) {
-    const state = engine.getState();
-    const record = buildHandRecord(
-      engine.getHandHistory(),
-      result,
-      state.handNumber,
-    );
     for (const p of state.players) {
       if (isAiUserId(p.userId)) continue;
       profileStore.recordHand(room.id, p.userId, p.username, record);
     }
     // Forget players who already left so views stay bounded and current.
-    const keep = new Set<string>();
-    for (const seat of room.seats) if (seat.userId) keep.add(seat.userId);
-    for (const r of room.pendingSeatReservations) keep.add(r.userId);
+    const keep = this.seatedKeepSet(room);
     profileStore.pruneTo(room.id, keep);
     this.broadcastProfiles(room);
     void this.runProfileSummaries(room);
+  }
+
+  // Deterministic self-review for every seated AI after a settled hand:
+  // recent-hand memory plus each AI's own bluff/c-bet outcomes. Must run
+  // before the next startHand clears hole cards; the settlement callback
+  // order guarantees that.
+  private collectHandForSelfReview(
+    room: Room,
+    state: GameState,
+    record: HandRecord,
+  ) {
+    selfReviewStore.recordHand(room.id, record);
+    for (const p of state.players) {
+      if (!isAiUserId(p.userId)) continue;
+      if (p.cards.length !== 2) continue;
+      const evaluation = evaluateHandForUser(
+        record,
+        p.userId,
+        p.cards,
+        state.communityCards,
+      );
+      selfReviewStore.recordEvaluation(room.id, p.userId, evaluation);
+    }
+    selfReviewStore.pruneTo(room.id, this.seatedKeepSet(room));
+  }
+
+  private seatedKeepSet(room: Room): Set<string> {
+    const keep = new Set<string>();
+    for (const seat of room.seats) if (seat.userId) keep.add(seat.userId);
+    for (const r of room.pendingSeatReservations) keep.add(r.userId);
+    return keep;
   }
 
   private broadcastProfiles(room: Room) {
@@ -994,6 +1033,7 @@ export class LobbyHandler {
     }
     room.pendingLeaveUserIds = [];
     profileStore.clearRoom(room.id);
+    selfReviewStore.clearRoom(room.id);
   }
 
   // ------------------------------------------------------------------
