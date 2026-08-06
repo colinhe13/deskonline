@@ -35,8 +35,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { http } from "../../utils/http";
+import { useWebSocket } from "../../composables/useWebSocket";
 
 interface LeaderboardEntry {
   rank: number;
@@ -63,16 +64,52 @@ function dailyClass(delta: number): string {
 const entries = ref<LeaderboardEntry[]>([]);
 const loading = ref(true);
 const error = ref("");
+const revision = ref(0);
+const { onMessage, offMessage } = useWebSocket();
 
-onMounted(async () => {
+function applySnapshot(payload: unknown) {
+  const p = payload as {
+    entries?: LeaderboardEntry[];
+    revision?: number;
+  };
+  if (!Array.isArray(p.entries)) return;
+
+  const nextRevision =
+    typeof p.revision === "number" && Number.isFinite(p.revision)
+      ? p.revision
+      : revision.value;
+  if (nextRevision < revision.value) return;
+
+  entries.value = p.entries;
+  revision.value = nextRevision;
+  loading.value = false;
+  error.value = "";
+}
+
+function handleLeaderboardUpdate(payload: unknown) {
+  applySnapshot(payload);
+}
+
+async function loadLeaderboard() {
   try {
     const res = await http.get("/api/leaderboard");
-    entries.value = res.data.entries;
+    applySnapshot(res.data);
   } catch {
-    error.value = "排行榜加载失败，请重试";
+    if (entries.value.length === 0) {
+      error.value = "排行榜加载失败，请重试";
+    }
   } finally {
     loading.value = false;
   }
+}
+
+onMounted(() => {
+  onMessage("leaderboard:update", handleLeaderboardUpdate);
+  void loadLeaderboard();
+});
+
+onUnmounted(() => {
+  offMessage("leaderboard:update", handleLeaderboardUpdate);
 });
 </script>
 
