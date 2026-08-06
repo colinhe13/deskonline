@@ -15,6 +15,8 @@ export type PersonaSeed = Omit<AiPersonaView, "id">;
 // Code is the source of truth for seeds; the DB is the runtime config that
 // can be tweaked via SQL without a redeploy. ensureAiPersonas overwrites
 // existing rows by slug (review decision: 覆盖更新).
+// Keep profiling/aiNote.ts personaNoteBySlug in sync when editing persona
+// text — it is a second description source for the same six personas.
 export const PERSONA_SEEDS: PersonaSeed[] = [
   {
     slug: "tight-aggressive",

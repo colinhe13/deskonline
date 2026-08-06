@@ -22,6 +22,8 @@ import {
 } from "../ai/accounts.js";
 import { decideAiAction } from "../ai/decision.js";
 import { recordAiDecision } from "../ai/stats.js";
+import { personaOfUser } from "../ai/personas.js";
+import { personaNoteBySlug } from "../ai/profiling/aiNote.js";
 import { buildHandRecord } from "../ai/profiling/handRecord.js";
 import { profileStore } from "../ai/profiling/store.js";
 import { summarizeOpponent } from "../ai/profiling/summarizer.js";
@@ -687,6 +689,15 @@ export class LobbyHandler {
   ) {
     for (const p of state.players) {
       profileStore.recordHand(room.id, p.userId, p.username, record);
+      if (isAiUserId(p.userId)) {
+        // Deterministic persona note instead of an LLM summary: written once
+        // at first recording; toView still gates display on aiProfileMinHands.
+        const persona = personaOfUser(p.userId);
+        const note = persona ? personaNoteBySlug[persona.slug] : undefined;
+        if (note && profileStore.getProfile(room.id, p.userId)?.note == null) {
+          profileStore.setNote(room.id, p.userId, note);
+        }
+      }
     }
     // Forget players who already left so views stay bounded and current.
     const keep = this.seatedKeepSet(room);
