@@ -606,6 +606,8 @@ export class LobbyHandler {
       userId,
       engine.getAvailableActionsForPlayer(userId),
       opponentProfiles,
+      selfReviewStore.getSelfReview(roomId, userId),
+      selfReviewStore.getRecentHands(roomId),
     )
       .then(({ action, amount }) => {
         clearTimeout(watchdog);

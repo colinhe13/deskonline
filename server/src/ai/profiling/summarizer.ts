@@ -14,7 +14,11 @@ export const NOTE_MAX_CHARS = 180;
 
 const summarySchema = z.object({ summary: z.string().min(1) });
 
-function formatHand(index: number, record: HandRecord, userId: string): string {
+export function formatHand(
+  index: number,
+  record: HandRecord,
+  userId: string,
+): string {
   const lines = record.actions.map(
     (a) =>
       `${a.street}:${a.userId === userId ? "hero" : a.userId}:${a.action}${a.amount ? a.amount : ""}`,

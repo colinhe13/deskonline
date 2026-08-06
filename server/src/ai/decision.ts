@@ -5,7 +5,8 @@ import { callLlm } from "./llm.client.js";
 import { config } from "../config.js";
 import { recordAiDecision, AiFailReason } from "./stats.js";
 import { personaOfUser } from "./personas.js";
-import type { ProfileView } from "./profiling/types.js";
+import type { ProfileView, HandRecord } from "./profiling/types.js";
+import type { SelfReviewView } from "./selfreview/store.js";
 
 export interface AiAction {
   action: PlayerActionType;
@@ -79,6 +80,8 @@ export async function decideAiAction(
   userId: string,
   availableActions: ActionOption[],
   opponentProfiles?: ProfileView[],
+  selfReview?: SelfReviewView | null,
+  recentHands?: HandRecord[],
 ): Promise<AiAction> {
   const fallback = fallbackAction(availableActions);
   const me = state.players.find((p) => p.userId === userId);
@@ -113,7 +116,13 @@ export async function decideAiAction(
   };
 
   try {
-    const context = buildDecisionContext(state, userId, opponentProfiles);
+    const context = buildDecisionContext(
+      state,
+      userId,
+      opponentProfiles,
+      selfReview,
+      recentHands,
+    );
     if (handDirective) context.handDirective = HAND_DIRECTIVE_BLUFF;
 
     let timer: ReturnType<typeof setTimeout> | undefined;

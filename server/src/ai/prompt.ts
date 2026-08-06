@@ -1,6 +1,9 @@
 import { GameState, Card, Suit } from "../poker/types.js";
-import type { ProfileView } from "./profiling/types.js";
+import { config } from "../config.js";
+import type { ProfileView, HandRecord } from "./profiling/types.js";
+import { formatHand } from "./profiling/summarizer.js";
 import type { AiPersonaView } from "./personas.js";
+import type { SelfReviewView } from "./selfreview/store.js";
 
 const BASE_SYSTEM_PROMPT = `你是一名顶级无限注德州扑克策略引擎，以 GTO（博弈论最优）为基线，并能在读取对手后主动剥削。你根据当前牌局局面输出唯一决策。请严格遵循以下策略框架与输出规范。
 
@@ -59,6 +62,15 @@ const BASE_SYSTEM_PROMPT = `你是一名顶级无限注德州扑克策略引擎�
   - 评语（note）描述的漏洞与统计同等重要，按同样逻辑执行。
 - 剥削优先级高于 GTO 基线与人格倾向：人格决定无读取时怎么打，剥削决定有读取时怎么打。但同一手牌内选定线路后仍须遵守故事线一致性。
 - 样本不足（stats.hands < 15）时回退 GTO 基线，不做无依据的偏离。
+
+## 自我读取与桌面形象
+- recentHandsSummary 是本桌最近几手的公开进程摘要，用于延续牌桌叙事：上一手谁大额下注赢了、谁亮牌被抓，都会影响本手对手的心理与你的线路选择。
+- selfReview 是你对自己近期打法的客观统计。对手同样在积累对你的读取，你必须管理自己的桌面形象：
+  - 近期诈唬多次被识破（bluff.successRate 显著偏低）→ 收敛诈唬，转为纯价值打法若干手，重建可信度；
+  - 近期诈唬屡屡得手 → 形象偏紧可信，本手诈唬线路可信度高，可适当延续；
+  - c-bet 得手率低（cbets.successRate < 35% 且 attempts ≥ 3）→ 降低对同一批对手的持续下注频率，弱面多过牌控池；
+  - tableImage 标签若存在，优先级高于上述数值推断。
+- 与人格/剥削章节的仲裁：形象管理的收敛指令只压制诈唬类频率，不覆盖人格的价值下注风格；剥削章节对"对手漏洞"的指令优先于形象保守倾向。
 
 ## 可用动作与输出规范
 - 可用动作只有五个：fold（弃牌）、check（过牌）、call（跟注）、raise（加注）、allin（全下）。翻后"下注（bet）"同样用 raise 表达——本街尚无人下注时，raise 就是下注；不要输出 bet 或其他词汇。
@@ -134,6 +146,8 @@ export function buildDecisionContext(
   state: GameState,
   userId: string,
   profiles?: ProfileView[],
+  selfReview?: SelfReviewView | null,
+  recentHands?: HandRecord[],
 ): Record<string, unknown> {
   const myIndex = state.players.findIndex((p) => p.userId === userId);
   const me = state.players[myIndex];
@@ -175,10 +189,28 @@ export function buildDecisionContext(
     history: [...(state.actionLog ?? [])],
   };
 
+  // Volatile per-hand fields go last so the stable prefix can still hit the
+  // provider's context cache across decisions within one hand.
+  const extras: Record<string, unknown> = {};
+  const recent = (recentHands ?? []).slice(-config.aiRecentHandsInContext);
+  if (recent.length > 0) {
+    extras.recentHandsSummary = recent.map((r, i) =>
+      formatHand(i + 1, r, userId),
+    );
+  }
+  if (selfReview) {
+    const view: Record<string, unknown> = {
+      bluff: selfReview.bluffs,
+      cbets: selfReview.cbets,
+    };
+    if (selfReview.tableImage) view.tableImage = selfReview.tableImage;
+    extras.selfReview = view;
+  }
+
   // Profiles go first so the stable prefix within one hand can hit the
   // provider's context cache on repeated decision calls.
   const usable = (profiles ?? []).filter((p) => p.ready);
-  if (usable.length === 0) return base;
+  if (usable.length === 0) return { ...base, ...extras };
   return {
     opponentProfileGuidance: OPPONENT_PROFILE_GUIDANCE,
     opponentProfiles: usable.map((p) => ({
@@ -187,5 +219,6 @@ export function buildDecisionContext(
       note: p.note ?? undefined,
     })),
     ...base,
+    ...extras,
   };
 }
