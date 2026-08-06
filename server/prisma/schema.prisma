@@ -22,6 +22,7 @@ model User {
   buyInHolds         BuyInHold[]
   pointsTransactions PointsTransaction[]
   aiSelfStats        AiSelfStats?
+  aiHandSummaries    AiHandSummary[]
 
   @@map("users")
 }
@@ -59,6 +60,50 @@ model AiSelfStats {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("ai_self_stats")
+}
+
+// Distilled experience notes from the global reflection cycle. Scope is
+// two-tier: personaSlug NULL = global lesson injected into every persona;
+// otherwise persona-specific. Keyed by slug string (no FK) so lessons
+// survive persona row churn and are trivially resettable per scope.
+model AiLesson {
+  id          String    @id @default(cuid())
+  personaSlug String?   @map("persona_slug") @db.VarChar(32)
+  text        String
+  evidence    String
+  status      String    @default("active") @db.VarChar(16)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  retiredAt   DateTime? @map("retired_at")
+
+  @@index([personaSlug, status])
+  @@map("ai_lessons")
+}
+
+// Compact per-hand self-view summaries — the raw material for reflection.
+// Server-side only; never holds hole cards (own or opponents') and is
+// window-pruned to the most recent rows per user at flush time.
+model AiHandSummary {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  position      String   @db.VarChar(8)
+  boardTexture  String   @map("board_texture") @db.VarChar(24)
+  streetReached String   @map("street_reached") @db.VarChar(12)
+  myBets        Int      @default(0) @map("my_bets")
+  myRaises      Int      @default(0) @map("my_raises")
+  facedBets     Int      @default(0) @map("faced_bets")
+  bluffed       String?  @db.VarChar(8)
+  cbet          String?  @db.VarChar(8)
+  netWon        Int      @default(0) @map("net_won")
+  wonAtShowdown Boolean  @default(false) @map("won_at_showdown")
+  foldedToBet   Boolean  @default(false) @map("folded_to_bet")
+  playedAt      DateTime @default(now()) @map("played_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, playedAt])
+  @@index([playedAt])
+  @@map("ai_hand_summaries")
 }
 
 model BuyInHold {
