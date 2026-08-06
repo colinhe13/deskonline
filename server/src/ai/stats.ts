@@ -15,6 +15,12 @@ export interface AiDecisionRecord {
   finalAction: PlayerActionType;
   personaSlug?: string;
   handDirective?: boolean;
+  // Effective bluff-hint probability actually rolled against, with the three
+  // modulation factors, so dynamic tuning is observable in the logs.
+  bluffRate?: number;
+  phaseFactor?: number;
+  imageFactor?: number;
+  opponentFactor?: number;
 }
 
 export interface AiStats {
@@ -77,8 +83,12 @@ export function recordAiDecision(rec: AiDecisionRecord): void {
   const reason = rec.failReason ? ` reason=${rec.failReason}` : "";
   const persona = rec.personaSlug ? ` persona=${rec.personaSlug}` : "";
   const hint = rec.handDirective ? " bluffHint" : "";
+  const bluff =
+    rec.bluffRate !== undefined
+      ? ` bluffRate=${rec.bluffRate}(pf=${rec.phaseFactor},if=${rec.imageFactor},of=${rec.opponentFactor})`
+      : "";
   console.info(
-    `[ai][decision] ${rec.username} hand=${rec.handNo} phase=${rec.phase} toCall=${rec.toCall}${persona}${hint} src=${rec.source}${reason}${raw} -> ${rec.finalAction}`,
+    `[ai][decision] ${rec.username} hand=${rec.handNo} phase=${rec.phase} toCall=${rec.toCall}${persona}${hint}${bluff} src=${rec.source}${reason}${raw} -> ${rec.finalAction}`,
   );
 
   const s = stats;

@@ -1,10 +1,16 @@
 import { z } from "zod";
-import { GameState, ActionOption, PlayerActionType } from "../poker/types.js";
+import {
+  GameState,
+  ActionOption,
+  GamePhase,
+  PlayerActionType,
+} from "../poker/types.js";
 import { buildDecisionContext, buildSystemPrompt } from "./prompt.js";
 import { callLlm } from "./llm.client.js";
 import { config } from "../config.js";
 import { recordAiDecision, AiFailReason } from "./stats.js";
 import { personaOfUser } from "./personas.js";
+import type { AiPersonaView } from "./personas.js";
 import type { ProfileView, HandRecord } from "./profiling/types.js";
 import type { SelfReviewView } from "./selfreview/store.js";
 
@@ -34,6 +40,74 @@ const HAND_DIRECTIVE_BLUFF =
 let decisionRng: () => number = Math.random;
 export function setAiDecisionRngForTests(rng?: () => number): void {
   decisionRng = rng ?? Math.random;
+}
+
+// First-cut per-street bluff multipliers; tuned later from table observation.
+const PHASE_FACTORS: Partial<Record<GamePhase, number>> = {
+  preflop: 0.6,
+  flop: 1.0,
+  turn: 1.0,
+  river: 0.7,
+};
+
+function imageFactorOf(selfReview?: SelfReviewView | null): number {
+  if (!selfReview) return 1.0;
+  const { attempts, successRate } = selfReview.bluffs;
+  if (attempts === 0 || successRate === null) return 1.0;
+  if (successRate >= 67) return 1.2;
+  if (successRate < 34 && attempts >= 2) return 0.5;
+  return 1.0;
+}
+
+function opponentFactorOf(opponentProfiles?: ProfileView[]): number {
+  const ready = (opponentProfiles ?? []).filter((p) => p.ready && p.stats);
+  if (ready.length === 0) return 1.0;
+  // Never bluff a calling station, even if the table average folds a lot.
+  if (ready.some((p) => (p.stats!.wtsd ?? 0) >= 50)) return 0.5;
+  const foldRates = ready
+    .map((p) => p.stats!.foldToCbet ?? p.stats!.foldToRaise)
+    .filter((v): v is number => v !== null);
+  if (foldRates.length === 0) return 1.0;
+  const avg = foldRates.reduce((a, b) => a + b, 0) / foldRates.length;
+  if (avg >= 60) return 1.3;
+  if (avg <= 30) return 0.5;
+  return 1.0;
+}
+
+export interface BluffHintBreakdown {
+  rate: number;
+  phaseFactor: number;
+  imageFactor: number;
+  opponentFactor: number;
+}
+
+// Dynamic per-decision bluff probability: persona baseline modulated by the
+// street, the AI's own recent bluff record (table image), and opponents'
+// observed fold tendencies. Clamped so no factor combination runs away.
+export function bluffHintBreakdown(
+  persona: AiPersonaView | null,
+  phase: GamePhase,
+  selfReview?: SelfReviewView | null,
+  opponentProfiles?: ProfileView[],
+): BluffHintBreakdown {
+  const phaseFactor = PHASE_FACTORS[phase] ?? 1.0;
+  const imageFactor = imageFactorOf(selfReview);
+  const opponentFactor = opponentFactorOf(opponentProfiles);
+  const base = persona?.bluffHintRate ?? 0;
+  const rate = Math.min(
+    Math.max(base * phaseFactor * imageFactor * opponentFactor, 0),
+    0.6,
+  );
+  return { rate, phaseFactor, imageFactor, opponentFactor };
+}
+
+export function effectiveBluffHintRate(
+  persona: AiPersonaView | null,
+  phase: GamePhase,
+  selfReview?: SelfReviewView | null,
+  opponentProfiles?: ProfileView[],
+): number {
+  return bluffHintBreakdown(persona, phase, selfReview, opponentProfiles).rate;
 }
 
 function normalizeRaw(raw: Record<string, unknown>): Record<string, unknown> {
@@ -86,10 +160,16 @@ export async function decideAiAction(
   const fallback = fallbackAction(availableActions);
   const me = state.players.find((p) => p.userId === userId);
   const persona = personaOfUser(userId);
-  // Server-side roll, independent of LLM sampling: with persona probability
-  // inject a bluff-line directive into this hand's context.
-  const handDirective =
-    persona !== null && decisionRng() < persona.bluffHintRate;
+  // Server-side roll, independent of LLM sampling: with the dynamic
+  // (phase/image/opponent-modulated) probability inject a bluff-line
+  // directive into this hand's context.
+  const bluffHint = bluffHintBreakdown(
+    persona,
+    state.phase,
+    selfReview,
+    opponentProfiles,
+  );
+  const handDirective = persona !== null && decisionRng() < bluffHint.rate;
 
   const meta = {
     username: me?.username ?? userId,
@@ -98,6 +178,10 @@ export async function decideAiAction(
     toCall: me ? Math.max(0, state.currentBet - me.bet) : 0,
     personaSlug: persona?.slug,
     handDirective,
+    bluffRate: persona ? Number(bluffHint.rate.toFixed(2)) : undefined,
+    phaseFactor: persona ? bluffHint.phaseFactor : undefined,
+    imageFactor: persona ? bluffHint.imageFactor : undefined,
+    opponentFactor: persona ? bluffHint.opponentFactor : undefined,
   };
   const finish = (
     result: AiAction,
