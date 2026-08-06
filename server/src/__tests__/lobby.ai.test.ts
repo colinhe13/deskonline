@@ -1355,7 +1355,7 @@ describe("lobby AI lifecycle", () => {
       expect(records[0].revealedHandNames).toEqual({ h1: "一对 A" });
     });
 
-    it("never records a reveal for AI players", async () => {
+    it("profiles AI players but never attaches a reveal to them", async () => {
       await joinAndConfirm("h1", "alice");
       await addAiAs("h1");
       room.status = "playing";
@@ -1372,7 +1372,11 @@ describe("lobby AI lifecycle", () => {
         engine.getState().players.find((p) => p.userId === aiId)?.cardsRevealed,
       ).toBe(true);
 
-      expect(profileStore.getRecentRecords(room.id, aiId)).toHaveLength(0);
+      // AI hands are profiled now (AI-vs-AI mutual reading), but the reveal
+      // flow must never attach a hand name to an AI record.
+      const aiRecords = profileStore.getRecentRecords(room.id, aiId);
+      expect(aiRecords).toHaveLength(1);
+      expect(aiRecords[0].revealedHandNames).toEqual({});
       const humanRecords = profileStore.getRecentRecords(room.id, "h1");
       expect(humanRecords).toHaveLength(1);
       expect(humanRecords[0].revealedHandNames).toEqual({});
