@@ -25,6 +25,13 @@ export interface PendingSeatReservationInfo {
   status: "pending";
 }
 
+export interface AiAccountOption {
+  username: string;
+  displayName: string;
+  styleLabel: string;
+  available: boolean;
+}
+
 export interface RoomDetail {
   id: string;
   hostId: string | null;
@@ -100,6 +107,7 @@ export const useGameStore = defineStore("game", () => {
   const availableActions = ref<ActionOption[]>([]);
   const handResult = ref<HandResultInfo | null>(null);
   const myUserId = ref<string | null>(null);
+  const aiOptions = ref<AiAccountOption[]>([]);
 
   const isSpectator = computed(
     () =>
@@ -139,6 +147,7 @@ export const useGameStore = defineStore("game", () => {
       pokerState.value = null;
       availableActions.value = [];
       handResult.value = null;
+      aiOptions.value = [];
     }
   }
 
@@ -155,12 +164,17 @@ export const useGameStore = defineStore("game", () => {
     myUserId.value = id;
   }
 
+  function setAiOptions(options: AiAccountOption[]) {
+    aiOptions.value = options;
+  }
+
   return {
     room,
     pokerState,
     availableActions,
     handResult,
     myUserId,
+    aiOptions,
     isSpectator,
     myPendingSeatReservation,
     mySeat,
@@ -170,5 +184,6 @@ export const useGameStore = defineStore("game", () => {
     setPokerState,
     setHandResult,
     setMyUserId,
+    setAiOptions,
   };
 });

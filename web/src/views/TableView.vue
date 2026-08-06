@@ -138,6 +138,15 @@
     />
 
     <Transition name="modal">
+      <AiPickerModal
+        v-if="showAiPicker"
+        :options="game.aiOptions"
+        @close="showAiPicker = false"
+        @select="selectAi"
+      />
+    </Transition>
+
+    <Transition name="modal">
       <RoomSettingsModal
         v-if="showSettings"
         :settings="settingsForm"
@@ -233,11 +242,13 @@ import ConfirmBuyIn from "../components/table/ConfirmBuyIn.vue";
 import RoomSettingsModal from "../components/table/RoomSettingsModal.vue";
 import TransferHostModal from "../components/table/TransferHostModal.vue";
 import PlayerProfileModal from "../components/table/PlayerProfileModal.vue";
+import AiPickerModal from "../components/table/AiPickerModal.vue";
 import SpectatorList from "../components/table/SpectatorList.vue";
 import ChatPanel from "../components/chat/ChatPanel.vue";
 import type { ChatMessage } from "../types/protocol";
 import type { ProfileView } from "../stores/profiles";
 import type {
+  AiAccountOption,
   RoomDetail,
   PokerState,
   ActionOption,
@@ -260,6 +271,7 @@ const {
 
 const showSettings = ref(false);
 const showTransfer = ref(false);
+const showAiPicker = ref(false);
 const profileUserId = ref<string | null>(null);
 const profileSeat = computed(() =>
   game.room?.seats.find((s) => s.userId === profileUserId.value),
@@ -352,6 +364,7 @@ function handleRoomState(payload: unknown) {
     room: RoomDetail | null;
     reason?: string;
     profiles?: ProfileView[];
+    aiOptions?: AiAccountOption[];
   };
   if (p.room) {
     // Chat is real-time only: switching rooms starts a fresh transcript.
@@ -360,6 +373,7 @@ function handleRoomState(payload: unknown) {
       profilesStore.clearProfiles();
     }
     game.setRoom(p.room);
+    game.setAiOptions(p.aiOptions ?? []);
     if (p.profiles) profilesStore.applyProfiles(p.profiles);
   } else {
     chatStore.clearMessages();
@@ -524,7 +538,12 @@ function startGame() {
 }
 
 function addAi() {
-  send("ai:add", {});
+  showAiPicker.value = true;
+}
+
+function selectAi(aiUsername: string) {
+  showAiPicker.value = false;
+  send("ai:add", { aiUsername });
 }
 
 function removeAi(targetUserId: string) {
