@@ -336,6 +336,9 @@ describe("effectiveBluffHintRate", () => {
     promptSection: "测试人格",
     temperature: 0.9,
     bluffHintRate: 0.4,
+    seedTemperature: 0.9,
+    seedBluffHintRate: 0.4,
+    evolvedAt: null,
   };
 
   const profileWith = (

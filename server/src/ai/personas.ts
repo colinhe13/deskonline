@@ -6,15 +6,25 @@ export interface AiPersonaView {
   displayName: string;
   styleLabel: string;
   promptSection: string;
+  // Effective values: evolved override when present, otherwise the seed.
   temperature: number;
   bluffHintRate: number;
+  // Seeds stay visible so evolution can anchor to them.
+  seedTemperature: number;
+  seedBluffHintRate: number;
+  evolvedAt: Date | null;
 }
 
-export type PersonaSeed = Omit<AiPersonaView, "id">;
+export type PersonaSeed = Omit<
+  AiPersonaView,
+  "id" | "seedTemperature" | "seedBluffHintRate" | "evolvedAt"
+>;
 
 // Code is the source of truth for seeds; the DB is the runtime config that
-// can be tweaked via SQL without a redeploy. ensureAiPersonas overwrites
-// existing rows by slug (review decision: 覆盖更新).
+// can be tweaked via SQL without a redeploy. ensureAiPersonas refreshes only
+// the textual seeds on redeploy — numeric values (temperature, bluffHintRate,
+// evolved_*) are written once at creation so evolution and manual SQL tweaks
+// survive restarts.
 // Keep profiling/aiNote.ts personaNoteBySlug in sync when editing persona
 // text — it is a second description source for the same six personas.
 export const PERSONA_SEEDS: PersonaSeed[] = [
@@ -83,19 +93,66 @@ const PERSONA_SLUG_BY_ACCOUNT: Record<string, string> = {
 const personaBySlug = new Map<string, AiPersonaView>();
 const personaByUserId = new Map<string, AiPersonaView>();
 
-// Idempotent startup seed: upsert by slug, overwriting all fields so a redeploy
-// refreshes persona text. Called from ensureAiAccounts.
+interface PersonaRow {
+  id: string;
+  slug: string;
+  displayName: string;
+  styleLabel: string;
+  promptSection: string;
+  temperature: number;
+  bluffHintRate: number;
+  evolvedBluffHintRate: number | null;
+  evolvedTemperature: number | null;
+  evolvedAt: Date | null;
+}
+
+// Effective-value view: evolved override wins, seed stays visible as anchor.
+function viewOfRow(row: PersonaRow): AiPersonaView {
+  return {
+    id: row.id,
+    slug: row.slug,
+    displayName: row.displayName,
+    styleLabel: row.styleLabel,
+    promptSection: row.promptSection,
+    temperature: row.evolvedTemperature ?? row.temperature,
+    bluffHintRate: row.evolvedBluffHintRate ?? row.bluffHintRate,
+    seedTemperature: row.temperature,
+    seedBluffHintRate: row.bluffHintRate,
+    evolvedAt: row.evolvedAt,
+  };
+}
+
+// Idempotent startup seed: upsert by slug. Only the textual seeds are
+// refreshed on redeploy; numeric columns (temperature, bluffHintRate,
+// evolved_*) are written once at creation and otherwise preserved, so
+// evolution results and manual SQL tweaks survive restarts.
+// Called from ensureAiAccounts.
 export async function ensureAiPersonas(): Promise<Map<string, AiPersonaView>> {
   for (const seed of PERSONA_SEEDS) {
-    const { slug, ...fields } = seed;
     const row = await prisma.aiPersona.upsert({
-      where: { slug },
-      update: fields,
+      where: { slug: seed.slug },
+      update: {
+        displayName: seed.displayName,
+        styleLabel: seed.styleLabel,
+        promptSection: seed.promptSection,
+      },
       create: seed,
     });
-    personaBySlug.set(row.slug, row);
+    personaBySlug.set(row.slug, viewOfRow(row));
   }
   return personaBySlug;
+}
+
+// Called after a successful evolution write so the hot path sees the new
+// baseline without a restart.
+export function applyEvolvedBluffHintRate(slug: string, rate: number): void {
+  const view = personaBySlug.get(slug);
+  if (!view) return;
+  const updated = { ...view, bluffHintRate: rate, evolvedAt: new Date() };
+  personaBySlug.set(slug, updated);
+  for (const [userId, bound] of personaByUserId) {
+    if (bound.slug === slug) personaByUserId.set(userId, updated);
+  }
 }
 
 export function personaForPoolIndex(index: number): PersonaSeed {

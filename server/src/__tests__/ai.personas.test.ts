@@ -107,7 +107,7 @@ describe("ensureAiPersonas", () => {
     );
   });
 
-  it("upserts every seed by slug with overwrite semantics", async () => {
+  it("upserts every seed by slug, refreshing only textual seeds", async () => {
     const map = await ensureAiPersonas();
     expect(prisma.aiPersona.upsert).toHaveBeenCalledTimes(6);
     expect(map.size).toBe(6);
@@ -115,15 +115,50 @@ describe("ensureAiPersonas", () => {
       const args = call[0] as {
         where: { slug: string };
         update: Record<string, unknown>;
+        create: Record<string, unknown>;
       };
-      // Overwrite review decision: update carries all mutable fields.
+      // Textual seeds refresh on redeploy...
       expect(args.update).toHaveProperty("promptSection");
-      expect(args.update).toHaveProperty("temperature");
-      expect(args.update).toHaveProperty("bluffHintRate");
+      expect(args.update).toHaveProperty("displayName");
+      expect(args.update).toHaveProperty("styleLabel");
+      // ...but numeric values are never overwritten, so evolution results
+      // and manual SQL tweaks survive restarts.
+      expect(args.update).not.toHaveProperty("temperature");
+      expect(args.update).not.toHaveProperty("bluffHintRate");
+      expect(args.update).not.toHaveProperty("evolvedBluffHintRate");
+      expect(args.update).not.toHaveProperty("evolvedTemperature");
+      expect(args.update).not.toHaveProperty("evolvedAt");
+      // Numeric seeds are only written at creation.
+      expect(args.create).toHaveProperty("temperature");
+      expect(args.create).toHaveProperty("bluffHintRate");
       expect(personaViewBySlug(args.where.slug)?.id).toBe(
         `p-${args.where.slug}`,
       );
     }
+  });
+
+  it("exposes effective values with evolved override and seed anchors", async () => {
+    vi.mocked(prisma.aiPersona.upsert).mockImplementation(
+      async (args: { create: Record<string, unknown> }) => {
+        const created = { id: `p-${args.create.slug}`, ...args.create };
+        if (args.create.slug === "maniac") {
+          return {
+            ...created,
+            evolvedBluffHintRate: 0.33,
+            evolvedTemperature: null,
+            evolvedAt: new Date("2026-08-06T00:00:00Z"),
+          } as never;
+        }
+        return created as never;
+      },
+    );
+    const map = await ensureAiPersonas();
+    const view = map.get("maniac");
+    expect(view?.bluffHintRate).toBeCloseTo(0.33, 10);
+    expect(view?.seedBluffHintRate).toBeCloseTo(0.4, 10);
+    expect(view?.temperature).toBe(1.0);
+    expect(view?.seedTemperature).toBe(1.0);
+    expect(view?.evolvedAt).toEqual(new Date("2026-08-06T00:00:00Z"));
   });
 });
 
@@ -143,6 +178,9 @@ describe("personaOfUser", () => {
       promptSection: "text",
       temperature: 1.0,
       bluffHintRate: 0.4,
+      seedTemperature: 1.0,
+      seedBluffHintRate: 0.4,
+      evolvedAt: null,
     };
     bindUserPersona("u1", view);
     expect(personaOfUser("u1")).toEqual(view);

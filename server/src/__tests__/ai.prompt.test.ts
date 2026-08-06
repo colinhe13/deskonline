@@ -299,6 +299,9 @@ describe("buildSystemPrompt", () => {
     promptSection: "你是一名松凶（LAG）玩家。测试人格段落。",
     temperature: 0.9,
     bluffHintRate: 0.3,
+    seedTemperature: 0.9,
+    seedBluffHintRate: 0.3,
+    evolvedAt: null,
   };
 
   it("returns the base prompt unchanged without a persona", () => {
