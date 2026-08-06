@@ -21,24 +21,44 @@ model User {
   persona        AiPersona?       @relation(fields: [personaId], references: [id])
   buyInHolds         BuyInHold[]
   pointsTransactions PointsTransaction[]
+  aiSelfStats        AiSelfStats?
 
   @@map("users")
 }
 
 model AiPersona {
-  id            String   @id @default(uuid())
-  slug          String   @unique @db.VarChar(32)
-  displayName   String   @map("display_name") @db.VarChar(32)
-  styleLabel    String   @map("style_label") @db.VarChar(32)
-  promptSection String   @map("prompt_section")
-  temperature   Float    @default(0.7)
-  bluffHintRate Float    @default(0) @map("bluff_hint_rate")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                   String    @id @default(uuid())
+  slug                 String    @unique @db.VarChar(32)
+  displayName          String    @map("display_name") @db.VarChar(32)
+  styleLabel           String    @map("style_label") @db.VarChar(32)
+  promptSection        String    @map("prompt_section")
+  temperature          Float     @default(0.7)
+  bluffHintRate        Float     @default(0) @map("bluff_hint_rate")
+  evolvedBluffHintRate Float?    @map("evolved_bluff_hint_rate")
+  evolvedTemperature   Float?    @map("evolved_temperature")
+  evolvedAt            DateTime? @map("evolved_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
   users User[]
 
   @@map("ai_personas")
+}
+
+// Cumulative self-outcome counters per AI account (own bluff/c-bet results),
+// the evolution signal. Deliberately contains no opponent impressions and no
+// hole cards.
+model AiSelfStats {
+  userId        String   @id @map("user_id")
+  bluffAttempts Int      @default(0) @map("bluff_attempts")
+  bluffSuccess  Int      @default(0) @map("bluff_success")
+  cbetAttempts  Int      @default(0) @map("cbet_attempts")
+  cbetSuccess   Int      @default(0) @map("cbet_success")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_self_stats")
 }
 
 model BuyInHold {
