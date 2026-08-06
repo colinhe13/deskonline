@@ -36,6 +36,12 @@ import {
   flushSelfStats,
 } from "../ai/selfreview/persist.js";
 import { selfReviewStore } from "../ai/selfreview/store.js";
+import { buildSummaryDraft } from "../ai/reflection/summary.js";
+import {
+  accumulateSummary,
+  clearSummariesRoom,
+  flushSummaries,
+} from "../ai/reflection/store.js";
 import { config } from "../config.js";
 import { ActionOption, GameState, PlayerActionType } from "../poker/types.js";
 import {
@@ -474,7 +480,13 @@ export class LobbyHandler {
           console.error("[profiling] hand collection failed", err);
         }
         try {
-          if (record) this.collectHandForSelfReview(room, state, record);
+          if (record)
+            this.collectHandForSelfReview(
+              room,
+              state,
+              record,
+              payload as HandResult,
+            );
         } catch (err) {
           // Self-review must never disturb settlement or the next hand.
           console.error("[selfreview] hand collection failed", err);
@@ -732,6 +744,7 @@ export class LobbyHandler {
     room: Room,
     state: GameState,
     record: HandRecord,
+    result: HandResult,
   ) {
     selfReviewStore.recordHand(room.id, record);
     for (const p of state.players) {
@@ -747,6 +760,15 @@ export class LobbyHandler {
       // Dual write: the table-scoped window above drives same-session image
       // management; this accumulator feeds the cross-match evolution signal.
       accumulateEvaluation(room.id, evaluation);
+      // Reflection material: compact self-view summary, no hole cards.
+      const draft = buildSummaryDraft(
+        state,
+        record,
+        result,
+        p.userId,
+        evaluation,
+      );
+      if (draft) accumulateSummary(room.id, draft);
     }
     selfReviewStore.pruneTo(room.id, this.seatedKeepSet(room));
   }
@@ -784,10 +806,12 @@ export class LobbyHandler {
   private async finalizeRoomLearning(roomId: string, aiUserIds: string[]) {
     try {
       await flushSelfStats(roomId);
+      await flushSummaries(roomId);
     } catch (err) {
       console.error("[ai][selfstats] final flush failed", err);
     }
     clearSelfStatsRoom(roomId);
+    clearSummariesRoom(roomId);
     this.roomHandCounts.delete(roomId);
     if (this.evolutionBusy.has(roomId)) return;
     this.evolutionBusy.add(roomId);
@@ -806,6 +830,7 @@ export class LobbyHandler {
     if (!opts.skipFlush) {
       try {
         await flushSelfStats(roomId);
+        await flushSummaries(roomId);
       } catch (err) {
         console.error("[ai][selfstats] flush failed", err);
         return;

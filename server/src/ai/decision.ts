@@ -11,6 +11,10 @@ import { config } from "../config.js";
 import { recordAiDecision, AiFailReason } from "./stats.js";
 import { personaOfUser } from "./personas.js";
 import type { AiPersonaView } from "./personas.js";
+import {
+  cachedLessonsForPersona,
+  LESSON_INJECTION_MAX,
+} from "./reflection/store.js";
 import type { ProfileView, HandRecord } from "./profiling/types.js";
 import type { SelfReviewView } from "./selfreview/store.js";
 
@@ -160,6 +164,12 @@ export async function decideAiAction(
   const fallback = fallbackAction(availableActions);
   const me = state.players.find((p) => p.userId === userId);
   const persona = personaOfUser(userId);
+  // Cross-match distilled lessons; the switch also gates injection so a
+  // disabled feature returns the prompt exactly to its pre-lesson shape.
+  const lessons =
+    config.aiReflectionEnabled && persona
+      ? cachedLessonsForPersona(persona.slug).slice(0, LESSON_INJECTION_MAX)
+      : undefined;
   // Server-side roll, independent of LLM sampling: with the dynamic
   // (phase/image/opponent-modulated) probability inject a bluff-line
   // directive into this hand's context.
@@ -216,7 +226,7 @@ export async function decideAiAction(
       timer = setTimeout(() => resolve(null), config.aiTimeoutMs + 500);
     });
     const raw = await Promise.race([
-      callLlm(buildSystemPrompt(persona), JSON.stringify(context), {
+      callLlm(buildSystemPrompt(persona, lessons), JSON.stringify(context), {
         temperature: persona?.temperature,
       }),
       timeout,

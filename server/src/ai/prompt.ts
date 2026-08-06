@@ -91,14 +91,24 @@ const BASE_SYSTEM_PROMPT = `你是一名顶级无限注德州扑克策略引擎�
 export const GTO_SYSTEM_PROMPT = BASE_SYSTEM_PROMPT;
 
 // Persona paragraph goes last; the trailing conflict rule tells the model how
-// to resolve clashes between the GTO framework and its character.
-export function buildSystemPrompt(persona?: AiPersonaView | null): string {
+// to resolve clashes between the GTO framework and its character. Distilled
+// experience lessons (if any) close the prompt as the freshest guidance.
+export function buildSystemPrompt(
+  persona?: AiPersonaView | null,
+  lessons?: string[],
+): string {
   if (!persona) return BASE_SYSTEM_PROMPT;
-  return `${BASE_SYSTEM_PROMPT}
+  const base = `${BASE_SYSTEM_PROMPT}
 
 ## 你的人格设定
 ${persona.promptSection}
 你的一切决策在上述策略框架与本人格设定之间取得平衡；两者冲突时，频率类指令（开池宽紧、诈唬频率、施压频率）以人格为准，输出格式与安全约束（动作集合、amount 规则）以框架为准。`;
+  if (!lessons || lessons.length === 0) return base;
+  return `${base}
+
+## 你的近期经验教训
+${lessons.map((l) => `- ${l}`).join("\n")}
+以上是你从近期实战中总结的经验，作为倾向性参考融入决策；与当前局面明显不符时以局面判断为准。`;
 }
 
 const SUIT_LETTER: Record<Suit, string> = {

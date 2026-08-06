@@ -6,6 +6,8 @@ import { prisma } from "../../db/client.js";
 export const LESSON_CAP_PER_SCOPE = 8;
 export const LESSON_TEXT_MAX = 80;
 export const LESSON_EVIDENCE_MAX = 60;
+// Merged persona+global lessons actually injected into one decision prompt.
+export const LESSON_INJECTION_MAX = 4;
 export const SUMMARY_WINDOW_PER_USER = 50;
 
 export interface LessonDraft {
@@ -226,6 +228,12 @@ export function cachedLessonsForPersona(slug: string): string[] {
   const own = lessonCache.get(slug) ?? [];
   const global = lessonCache.get(null) ?? [];
   return [...own, ...global].map((l) => l.text);
+}
+
+// Startup warm-up (Q4): the decision hot path must see persisted lessons
+// immediately after a restart, not only after the first reflection cycle.
+export async function preloadLessonCache(): Promise<void> {
+  refreshLessonCache(await loadActiveLessons());
 }
 
 export function resetReflectionStoreForTests(): void {

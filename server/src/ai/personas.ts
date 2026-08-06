@@ -174,6 +174,16 @@ export function personaViewBySlug(slug: string): AiPersonaView | undefined {
   return personaBySlug.get(slug);
 }
 
+// Reflection engine reads: all seeded personas and the current account
+// bindings (userId -> persona), used to group self-stats by persona.
+export function allPersonaViews(): AiPersonaView[] {
+  return [...personaBySlug.values()];
+}
+
+export function personaBindings(): ReadonlyMap<string, AiPersonaView> {
+  return personaByUserId;
+}
+
 export function bindUserPersona(userId: string, persona: AiPersonaView): void {
   personaByUserId.set(userId, persona);
 }

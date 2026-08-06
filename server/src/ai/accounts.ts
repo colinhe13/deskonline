@@ -8,6 +8,7 @@ import {
   personaForAccount,
   personaViewBySlug,
 } from "./personas.js";
+import { preloadLessonCache } from "./reflection/store.js";
 
 export interface AiAccount {
   id: string;
@@ -78,6 +79,13 @@ export async function ensureAiAccounts(): Promise<void> {
       aiFlagCache.set(existing.id, true);
       if (persona) bindUserPersona(existing.id, persona);
     }
+  }
+  try {
+    await preloadLessonCache();
+  } catch (err) {
+    // Lessons are optional guidance; a preload failure degrades to
+    // lesson-less prompts until the first successful reflection cycle.
+    console.error("[ai][reflect] lesson preload failed", err);
   }
 }
 

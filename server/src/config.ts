@@ -34,4 +34,13 @@ export const config = {
   ),
   aiSelfStatsWindow: parseInt(process.env.AI_SELF_STATS_WINDOW || "20", 10),
   aiEvolveEveryHands: parseInt(process.env.AI_EVOLVE_EVERY_HANDS || "20", 10),
+  // Global reflection cycle: one LLM call over all personas every N settled
+  // hands server-wide. The enabled switch stops both new reflections AND
+  // lesson injection (full return to the pre-lesson status quo).
+  aiReflectionEnabled:
+    (process.env.AI_REFLECTION_ENABLED ?? "true") !== "false",
+  aiReflectEveryHands: parseInt(
+    process.env.AI_REFLECT_EVERY_HANDS || "100",
+    10,
+  ),
 };
