@@ -120,6 +120,7 @@ function makeFakeGateway() {
     broadcastAll: vi.fn((type: string, payload: unknown) => {
       sent.push({ type, payload });
     }),
+    requestLeaderboardRefresh: vi.fn(),
   };
 }
 
@@ -1430,6 +1431,44 @@ describe("lobby AI lifecycle", () => {
       const chips = handler.getTableChipsByUserId();
       expect(chips.get("h1")).toBe(room.settings.minBuyIn);
       expect(chips.get(aiId)).toBe(room.settings.minBuyIn);
+    });
+
+    it("keeps the settled snapshot unchanged while a hand is in progress", async () => {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      const aiId = room.aiSeats()[0]!.userId!;
+      room.status = "playing";
+      handler["startEngine"](room);
+
+      const before = handler.getSettledTableChipsByUserId();
+      const engine = handler["engines"].get(room.id)!;
+      const player = engine.getState().players.find((p) => p.userId === "h1")!;
+      player.chips = 1;
+      player.bet = room.settings.bigBlind;
+      player.totalBet = room.settings.bigBlind;
+
+      expect(handler.getSettledTableChipsByUserId()).toEqual(before);
+      expect(before.get("h1")).toBe(room.settings.minBuyIn);
+      expect(before.get(aiId)).toBe(room.settings.minBuyIn);
+    });
+
+    it("does not request a leaderboard refresh for an individual action", async () => {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      room.status = "playing";
+      handler["startEngine"](room);
+      gateway.requestLeaderboardRefresh.mockClear();
+
+      const engine = handler["engines"].get(room.id)!;
+      const current =
+        engine.getState().players[engine.getState().currentPlayerIndex];
+      if (current.userId !== "h1") throw new Error("test expected human turn");
+      expect(
+        await handler.handleMessage("h1", "alice", "poker:action", {
+          action: "call",
+        }),
+      ).toBeUndefined();
+      expect(gateway.requestLeaderboardRefresh).not.toHaveBeenCalled();
     });
   });
 });

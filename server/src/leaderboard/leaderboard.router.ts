@@ -4,7 +4,6 @@ import {
   AuthenticatedRequest,
 } from "../auth/auth.middleware.js";
 import { WebSocketGateway } from "../ws/gateway.js";
-import { getLeaderboard } from "./leaderboard.service.js";
 
 export function createLeaderboardRouter(gateway: WebSocketGateway): Router {
   const router = Router();
@@ -14,8 +13,8 @@ export function createLeaderboardRouter(gateway: WebSocketGateway): Router {
     authMiddleware,
     async (_req: AuthenticatedRequest, res: Response) => {
       try {
-        const entries = await getLeaderboard(gateway.getTableChipsByUserId());
-        res.json({ entries });
+        const snapshot = await gateway.getLeaderboardSnapshot();
+        res.json(snapshot);
       } catch {
         res.status(500).json({ error: "INTERNAL_ERROR" });
       }

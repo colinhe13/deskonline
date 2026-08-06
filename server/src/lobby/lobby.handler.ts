@@ -41,6 +41,9 @@ const addAiPayloadSchema = z.object({
 
 export class LobbyHandler {
   private engines: Map<string, PokerEngine> = new Map();
+  // Stable table assets used by the leaderboard. This remains at the last
+  // completed-hand boundary while an engine is dealing the next hand.
+  private settledTableChipsByRoom: Map<string, Map<string, number>> = new Map();
   // roomId -> userId of the AI currently awaiting an LLM decision.
   private aiPending: Map<string, string> = new Map();
   // Bumped whenever a room's engine is replaced, invalidating stale timers.
@@ -211,6 +214,52 @@ export class LobbyHandler {
     return chips;
   }
 
+  // The leaderboard reads only stable snapshots. During a hand, the previous
+  // boundary remains authoritative until all settlement work is complete.
+  getSettledTableChipsByUserId(): Map<string, number> {
+    const chips = new Map<string, number>();
+    const add = (userId: string, amount: number) => {
+      if (amount <= 0) return;
+      chips.set(userId, (chips.get(userId) ?? 0) + amount);
+    };
+
+    for (const room of roomManager.allRooms()) {
+      if (!this.settledTableChipsByRoom.has(room.id)) {
+        this.captureSettledTableChips(room);
+      }
+      for (const [userId, amount] of this.settledTableChipsByRoom.get(
+        room.id,
+      ) ?? []) {
+        add(userId, amount);
+      }
+    }
+    return chips;
+  }
+
+  private captureSettledTableChips(room: Room) {
+    const chips = new Map<string, number>();
+    const add = (userId: string, amount: number) => {
+      if (amount <= 0) return;
+      chips.set(userId, (chips.get(userId) ?? 0) + amount);
+    };
+
+    for (const seat of room.seats) {
+      if (seat.userId) add(seat.userId, seat.chips);
+    }
+    for (const reservation of room.pendingSeatReservations) {
+      add(reservation.userId, reservation.buyIn);
+    }
+    this.settledTableChipsByRoom.set(room.id, chips);
+  }
+
+  private publishSettledLeaderboard(room: Room) {
+    this.captureSettledTableChips(room);
+    const gateway = this.gateway as unknown as {
+      requestLeaderboardRefresh?: () => void;
+    };
+    gateway.requestLeaderboardRefresh?.();
+  }
+
   private async handlePokerAction(userId: string, payload: unknown) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
@@ -303,6 +352,9 @@ export class LobbyHandler {
   // keepDealer=true reuses the previous dealer (voided hand); otherwise the
   // button advances to the next seat in the rebuilt roster.
   private startEngine(room: Room, keepDealer = false) {
+    // Capture before blinds are posted so the snapshot belongs to the hand
+    // that just ended, not to the newly started hand.
+    this.publishSettledLeaderboard(room);
     const players = room.confirmedSeats().map((s) => ({
       userId: s.userId!,
       username: s.username!,
@@ -876,6 +928,7 @@ export class LobbyHandler {
       await this.removeAllAi(room);
       room.status = "waiting";
       room.autoResume = false;
+      this.publishSettledLeaderboard(room);
       this.sendRoomState(room);
       this.broadcastLobbyList();
       return;
@@ -886,6 +939,7 @@ export class LobbyHandler {
     if (needsConfirm) {
       room.status = "waiting";
       room.autoResume = true;
+      this.publishSettledLeaderboard(room);
       this.sendRoomState(room);
       this.broadcastLobbyList();
       return;
@@ -895,6 +949,7 @@ export class LobbyHandler {
     if (roster.length < 2) {
       room.status = "waiting";
       room.autoResume = false;
+      this.publishSettledLeaderboard(room);
       this.sendRoomState(room);
       this.broadcastLobbyList();
       return;
@@ -1405,6 +1460,7 @@ export class LobbyHandler {
     }
 
     room.confirmBuyIn(userId, buyIn);
+    this.publishSettledLeaderboard(room);
     this.sendRoomState(room);
     this.tryResumeGame(room);
   }
@@ -1511,6 +1567,7 @@ export class LobbyHandler {
       }
     }
 
+    this.publishSettledLeaderboard(room);
     this.broadcastLobbyList();
     this.sendRoomState(room);
   }
@@ -1707,6 +1764,7 @@ export class LobbyHandler {
 
     this.sendRoomState(room);
     this.broadcastLobbyList();
+    this.publishSettledLeaderboard(room);
   }
 
   private voidHandToSeats(room: Room, engine: PokerEngine) {
@@ -1817,6 +1875,7 @@ export class LobbyHandler {
     }
     room.confirmBuyIn(account.id, room.settings.minBuyIn);
 
+    this.publishSettledLeaderboard(room);
     this.broadcastLobbyList();
     this.sendRoomState(room);
     this.tryResumeGame(room);
@@ -1854,6 +1913,7 @@ export class LobbyHandler {
 
     const chips = room.removePlayer(targetId!);
     if (chips > 0) await addPoints(targetId!, chips);
+    this.publishSettledLeaderboard(room);
     this.broadcastLobbyList();
     this.sendRoomState(room);
   }

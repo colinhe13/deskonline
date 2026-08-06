@@ -5,10 +5,15 @@ import { WebSocket } from "ws";
 const mocks = vi.hoisted(() => ({
   verifyActiveToken: vi.fn(),
   handleMessage: vi.fn(),
+  getLeaderboard: vi.fn(),
 }));
 
 vi.mock("../auth/auth.service.js", () => ({
   verifyActiveToken: mocks.verifyActiveToken,
+}));
+
+vi.mock("../leaderboard/leaderboard.service.js", () => ({
+  getLeaderboard: mocks.getLeaderboard,
 }));
 
 vi.mock("../lobby/lobby.handler.js", () => ({
@@ -57,6 +62,8 @@ describe("WebSocketGateway session replacement", () => {
   beforeEach(async () => {
     mocks.handleMessage.mockReset();
     mocks.handleMessage.mockResolvedValue(undefined);
+    mocks.getLeaderboard.mockReset();
+    mocks.getLeaderboard.mockResolvedValue([]);
     mocks.verifyActiveToken.mockReset();
     mocks.verifyActiveToken.mockImplementation(async (token: string) => ({
       userId: "u1",
@@ -87,6 +94,26 @@ describe("WebSocketGateway session replacement", () => {
 
     await expect(waitForClose(socket)).resolves.toBe(4001);
     expect(gateway.getConnectedUserIds()).toEqual([]);
+  });
+
+  it("sends the current leaderboard snapshot after connecting", async () => {
+    const socket = new WebSocket(url("old-token"));
+    const snapshot = new Promise<unknown>((resolve) => {
+      socket.on("message", (data) => {
+        const message = JSON.parse(data.toString()) as {
+          type: string;
+          payload: unknown;
+        };
+        if (message.type === "leaderboard:update") resolve(message.payload);
+      });
+    });
+
+    await new Promise<void>((resolve) => socket.once("open", () => resolve()));
+    await expect(snapshot).resolves.toEqual({ entries: [], revision: 1 });
+
+    const closed = waitForClose(socket);
+    socket.close();
+    await closed;
   });
 
   it("closes the old connection when a newer connection is accepted", async () => {

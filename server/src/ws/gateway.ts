@@ -8,6 +8,8 @@ import {
   shouldRouteToLobby,
 } from "./protocol.js";
 import { LobbyHandler } from "../lobby/lobby.handler.js";
+import { getLeaderboard } from "../leaderboard/leaderboard.service.js";
+import type { LeaderboardEntry } from "../leaderboard/leaderboard.service.js";
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -18,12 +20,22 @@ interface ConnectedClient {
 
 const HEARTBEAT_INTERVAL = 30_000;
 
+export interface LeaderboardSnapshot {
+  entries: LeaderboardEntry[];
+  revision: number;
+}
+
 export class WebSocketGateway {
   private wss: WebSocketServer;
   private clients: Map<string, ConnectedClient> = new Map();
   private minimumValidSessionVersions: Map<string, number> = new Map();
   private heartbeatTimer: ReturnType<typeof setInterval>;
   private lobbyHandler: LobbyHandler;
+  private leaderboardSnapshot: LeaderboardSnapshot | null = null;
+  private leaderboardDirty = false;
+  private leaderboardBroadcastRequested = false;
+  private leaderboardFlushPromise: Promise<void> | null = null;
+  private leaderboardRevision = 0;
 
   constructor(server: Server) {
     this.wss = new WebSocketServer({ server, path: "/ws" });
@@ -108,6 +120,7 @@ export class WebSocketGateway {
       }),
     );
     this.lobbyHandler.sendRoomListToUser(user.userId);
+    void this.sendLeaderboardSnapshotToUser(user.userId);
   }
 
   private async handleMessage(
@@ -223,6 +236,85 @@ export class WebSocketGateway {
 
   getTableChipsByUserId(): Map<string, number> {
     return this.lobbyHandler.getTableChipsByUserId();
+  }
+
+  requestLeaderboardRefresh() {
+    this.leaderboardDirty = true;
+    this.leaderboardBroadcastRequested = true;
+    void this.ensureLeaderboardFlush().catch((err) => {
+      console.error("[leaderboard] refresh failed", err);
+    });
+  }
+
+  async getLeaderboardSnapshot(): Promise<LeaderboardSnapshot> {
+    if (!this.leaderboardSnapshot) {
+      this.leaderboardDirty = true;
+    }
+    if (this.leaderboardDirty || this.leaderboardFlushPromise) {
+      try {
+        await this.ensureLeaderboardFlush();
+      } catch (err) {
+        if (!this.leaderboardSnapshot) throw err;
+      }
+    }
+    if (!this.leaderboardSnapshot) {
+      throw new Error("LEADERBOARD_UNAVAILABLE");
+    }
+    return this.leaderboardSnapshot;
+  }
+
+  private async sendLeaderboardSnapshotToUser(userId: string) {
+    try {
+      const snapshot = await this.getLeaderboardSnapshot();
+      this.sendToUser(userId, "leaderboard:update", snapshot);
+    } catch (err) {
+      console.error("[leaderboard] initial snapshot failed", err);
+    }
+  }
+
+  private ensureLeaderboardFlush(): Promise<void> {
+    if (this.leaderboardFlushPromise) return this.leaderboardFlushPromise;
+
+    this.leaderboardFlushPromise = Promise.resolve()
+      .then(() => this.flushLeaderboard())
+      .finally(() => {
+        this.leaderboardFlushPromise = null;
+        if (this.leaderboardDirty) {
+          void this.ensureLeaderboardFlush().catch((err) => {
+            console.error("[leaderboard] queued refresh failed", err);
+          });
+        }
+      });
+    return this.leaderboardFlushPromise;
+  }
+
+  private async flushLeaderboard() {
+    while (this.leaderboardDirty) {
+      this.leaderboardDirty = false;
+      const shouldBroadcast = this.leaderboardBroadcastRequested;
+      this.leaderboardBroadcastRequested = false;
+      const entries = await getLeaderboard(
+        this.getLeaderboardTableChipsByUserId(),
+      );
+      const snapshot: LeaderboardSnapshot = {
+        entries,
+        revision: ++this.leaderboardRevision,
+      };
+      this.leaderboardSnapshot = snapshot;
+      if (shouldBroadcast) {
+        this.broadcastAll("leaderboard:update", snapshot);
+      }
+    }
+  }
+
+  private getLeaderboardTableChipsByUserId(): Map<string, number> {
+    const handler = this.lobbyHandler as unknown as {
+      getSettledTableChipsByUserId?: () => Map<string, number>;
+      getTableChipsByUserId: () => Map<string, number>;
+    };
+    return handler.getSettledTableChipsByUserId
+      ? handler.getSettledTableChipsByUserId()
+      : handler.getTableChipsByUserId();
   }
 
   destroy() {
