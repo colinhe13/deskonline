@@ -49,9 +49,11 @@ export function accumulateEvaluation(
 export async function flushSelfStats(roomId: string): Promise<void> {
   const byUser = pendingByRoom.get(roomId);
   if (!byUser || byUser.size === 0) return;
-  const snapshot = [...byUser.entries()].filter(
-    ([, d]) => d.bluffAttempts + d.cbetAttempts > 0,
-  );
+  // Copy the deltas: the buffer keeps mutating the same objects while the
+  // write is in flight, and the subtraction below must use the flushed values.
+  const snapshot = [...byUser.entries()]
+    .filter(([, d]) => d.bluffAttempts + d.cbetAttempts > 0)
+    .map(([userId, d]) => [userId, { ...d }] as const);
   if (snapshot.length === 0) {
     pendingByRoom.delete(roomId);
     return;
