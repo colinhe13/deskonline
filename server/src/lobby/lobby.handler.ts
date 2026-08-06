@@ -675,16 +675,17 @@ export class LobbyHandler {
   // Opponent profiling
   // ------------------------------------------------------------------
 
-  // Records one settled hand for every human participant. AI accounts are
-  // never profiled. Called synchronously at settlement; the LLM summary runs
-  // asynchronously and never blocks the game loop.
+  // Records one settled hand for every seated participant, AI included — AI
+  // profiles feed AI-vs-AI mutual reading and are filtered out on the
+  // human-facing consumer side (broadcast/snapshot), never in storage.
+  // Called synchronously at settlement; the LLM summary runs asynchronously
+  // and never blocks the game loop.
   private collectHandForProfiling(
     room: Room,
     state: GameState,
     record: HandRecord,
   ) {
     for (const p of state.players) {
-      if (isAiUserId(p.userId)) continue;
       profileStore.recordHand(room.id, p.userId, p.username, record);
     }
     // Forget players who already left so views stay bounded and current.

@@ -1,4 +1,5 @@
 import { config } from "../../config.js";
+import { isAiUserId } from "../accounts.js";
 import type { HandRecord, OpponentProfile, ProfileView } from "./types.js";
 import { applyHandToStats, computeRates, createStats } from "./stats.js";
 
@@ -119,7 +120,7 @@ export function toView(profile: OpponentProfile): ProfileView {
   return {
     userId: profile.userId,
     username: profile.username,
-    isAi: false,
+    isAi: isAiUserId(profile.userId),
     hands: profile.stats.hands,
     ready,
     stats: ready ? computeRates(profile.stats) : null,
