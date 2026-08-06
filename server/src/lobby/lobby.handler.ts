@@ -21,6 +21,7 @@ import {
   pickFreeAi,
 } from "../ai/accounts.js";
 import { decideAiAction } from "../ai/decision.js";
+import { evolveAiUser } from "../ai/evolution/engine.js";
 import { recordAiDecision } from "../ai/stats.js";
 import { personaOfUser } from "../ai/personas.js";
 import { personaNoteBySlug } from "../ai/profiling/aiNote.js";
@@ -29,6 +30,11 @@ import { profileStore } from "../ai/profiling/store.js";
 import { summarizeOpponent } from "../ai/profiling/summarizer.js";
 import type { HandRecord } from "../ai/profiling/types.js";
 import { evaluateHandForUser } from "../ai/selfreview/evaluate.js";
+import {
+  accumulateEvaluation,
+  clearSelfStatsRoom,
+  flushSelfStats,
+} from "../ai/selfreview/persist.js";
 import { selfReviewStore } from "../ai/selfreview/store.js";
 import { config } from "../config.js";
 import { ActionOption, GameState, PlayerActionType } from "../poker/types.js";
@@ -69,6 +75,11 @@ export class LobbyHandler {
   private disconnectedActionRooms: Set<string> = new Set();
   // One profile-summary run per room at a time; summaries are fire-and-forget.
   private profilingBusy: Set<string> = new Set();
+  // Settled-hand counter per room (the engine restarts at 1 every hand, so
+  // the room keeps its own tally for the evolve/flush boundary).
+  private roomHandCounts: Map<string, number> = new Map();
+  // One self-stats flush + evolution cycle per room at a time.
+  private evolutionBusy: Set<string> = new Set();
 
   constructor(private gateway: WebSocketGateway) {}
 
@@ -468,6 +479,13 @@ export class LobbyHandler {
           // Self-review must never disturb settlement or the next hand.
           console.error("[selfreview] hand collection failed", err);
         }
+        if (record) {
+          const count = (this.roomHandCounts.get(room.id) ?? 0) + 1;
+          this.roomHandCounts.set(room.id, count);
+          if (count % config.aiEvolveEveryHands === 0) {
+            void this.runLearningCycle(room);
+          }
+        }
       }
       // Busted humans become unconfirmed (their client shows the rebuy
       // prompt); busted AI seats are handled at the hand boundary.
@@ -726,6 +744,9 @@ export class LobbyHandler {
         state.communityCards,
       );
       selfReviewStore.recordEvaluation(room.id, p.userId, evaluation);
+      // Dual write: the table-scoped window above drives same-session image
+      // management; this accumulator feeds the cross-match evolution signal.
+      accumulateEvaluation(room.id, evaluation);
     }
     selfReviewStore.pruneTo(room.id, this.seatedKeepSet(room));
   }
@@ -735,6 +756,75 @@ export class LobbyHandler {
     for (const seat of room.seats) if (seat.userId) keep.add(seat.userId);
     for (const r of room.pendingSeatReservations) keep.add(r.userId);
     return keep;
+  }
+
+  // ------------------------------------------------------------------
+  // Cross-match learning: self-stats flush + persona evolution
+  // ------------------------------------------------------------------
+
+  // Every aiEvolveEveryHands settled hands: flush the pending self-stats
+  // increments, then run persona evolution for the seated AIs. Async and
+  // fire-and-forget — a DB outage degrades to in-memory-only state and must
+  // never disturb the game. One cycle per room at a time (busy lock, same
+  // pattern as profilingBusy).
+  private async runLearningCycle(room: Room) {
+    if (this.evolutionBusy.has(room.id)) return;
+    this.evolutionBusy.add(room.id);
+    try {
+      await this.flushAndEvolveRoom(room.id, this.seatedAiUserIds(room));
+    } finally {
+      this.evolutionBusy.delete(room.id);
+    }
+  }
+
+  // Final cycle at teardown: flush whatever the boundary flush hasn't
+  // written yet, evolve the AIs that just left, then drop the room's
+  // learning state. Runs even when a boundary cycle is in flight (the flush
+  // is increment-safe; evolution is skipped if the lock is held).
+  private async finalizeRoomLearning(roomId: string, aiUserIds: string[]) {
+    try {
+      await flushSelfStats(roomId);
+    } catch (err) {
+      console.error("[ai][selfstats] final flush failed", err);
+    }
+    clearSelfStatsRoom(roomId);
+    this.roomHandCounts.delete(roomId);
+    if (this.evolutionBusy.has(roomId)) return;
+    this.evolutionBusy.add(roomId);
+    try {
+      await this.flushAndEvolveRoom(roomId, aiUserIds, { skipFlush: true });
+    } finally {
+      this.evolutionBusy.delete(roomId);
+    }
+  }
+
+  private async flushAndEvolveRoom(
+    roomId: string,
+    aiUserIds: string[],
+    opts: { skipFlush?: boolean } = {},
+  ) {
+    if (!opts.skipFlush) {
+      try {
+        await flushSelfStats(roomId);
+      } catch (err) {
+        console.error("[ai][selfstats] flush failed", err);
+        return;
+      }
+    }
+    for (const userId of aiUserIds) {
+      try {
+        await evolveAiUser(userId);
+      } catch (err) {
+        console.error("[ai][evolution] evolve failed", err);
+      }
+    }
+  }
+
+  private seatedAiUserIds(room: Room): string[] {
+    return room
+      .aiSeats()
+      .map((s) => s.userId)
+      .filter((u): u is string => !!u);
   }
 
   // Human-facing feed: AI entries are filtered out so AI-vs-AI mutual
@@ -1044,6 +1134,9 @@ export class LobbyHandler {
 
   // Removes every AI seat, refunding chips. Enforces "no pure-AI tables".
   private async removeAllAi(room: Room) {
+    // Capture before seats are removed: the teardown learning cycle needs
+    // the AI roster to run one last evolution per account.
+    const aiUserIds = this.seatedAiUserIds(room);
     for (const seat of room.aiSeats()) {
       const uid = seat.userId!;
       const chips = seat.chips;
@@ -1051,6 +1144,12 @@ export class LobbyHandler {
       if (chips > 0) await addPoints(uid, chips);
     }
     room.pendingLeaveUserIds = [];
+    // Final cross-match flush + evolution before the table-scoped stores are
+    // cleared. Fire-and-forget: the stores below are the table-scoped state,
+    // independent of the persisted counters.
+    void this.finalizeRoomLearning(room.id, aiUserIds).catch((err) => {
+      console.error("[ai][learning] teardown cycle failed", err);
+    });
     profileStore.clearRoom(room.id);
     selfReviewStore.clearRoom(room.id);
   }
