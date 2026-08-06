@@ -811,8 +811,9 @@ export class LobbyHandler {
 
   // Final cycle at teardown: flush whatever the boundary flush hasn't
   // written yet, evolve the AIs that just left, then drop the room's
-  // learning state. Runs even when a boundary cycle is in flight (the flush
-  // is increment-safe; evolution is skipped if the lock is held).
+  // learning state. Runs even when a boundary cycle is in flight (the
+  // self-stats flush is increment-safe, the summary flush skips itself
+  // while one is in flight; evolution is skipped if the lock is held).
   private async finalizeRoomLearning(roomId: string, aiUserIds: string[]) {
     try {
       await flushSelfStats(roomId);

@@ -105,9 +105,6 @@ export function buildSummaryDraft(
   const winAmount = record.winners
     .filter((w) => w.userId === userId)
     .reduce((sum, w) => sum + w.amount, 0);
-  const refund = result.refunds
-    .filter((r) => r.userId === userId)
-    .reduce((sum, r) => sum + r.amount, 0);
 
   let streetReached: string;
   if (atShowdown) streetReached = "showdown";
@@ -128,7 +125,9 @@ export function buildSummaryDraft(
     facedBets: counts.facedBets,
     bluffed: evaluation.bluff ?? null,
     cbet: evaluation.cbet ?? null,
-    netWon: winAmount + refund - me.totalBet,
+    // totalBet is already refund-adjusted by returnUncalledBets before
+    // settlement broadcasts, so winAmount - totalBet is the true chip delta.
+    netWon: winAmount - me.totalBet,
     wonAtShowdown: isWinner && atShowdown,
     foldedToBet: !isWinner && !atShowdown && counts.facedBets > 0,
   };

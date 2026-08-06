@@ -218,6 +218,9 @@ function validateOutput(
     const text = lesson.text.trim();
     const evidence = lesson.evidence.trim();
     if (!text || text.length > LESSON_TEXT_MAX) return null;
+    // Punctuation/whitespace-only text normalizes to "" in the store's
+    // dedupe and carries no guidance.
+    if (text.replace(/[\s\p{P}]/gu, "").length === 0) return null;
     if (evidence.length > LESSON_EVIDENCE_MAX) return null;
     drafts.push({
       personaSlug: lesson.scope === "global" ? null : lesson.scope,

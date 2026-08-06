@@ -248,6 +248,49 @@ describe("summary buffer flush", () => {
   });
 });
 
+describe("summary buffer concurrency", () => {
+  it("skips overlapping flushes so rows are never written twice", async () => {
+    accumulateSummary("room1", summaryDraft("u1", 1));
+    accumulateSummary("room1", summaryDraft("u1", 2));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    vi.mocked(prisma.aiHandSummary.createMany).mockImplementationOnce(
+      async () => {
+        await gate;
+        return { count: 2 };
+      },
+    );
+    vi.mocked(prisma.aiHandSummary.createMany).mockResolvedValue({ count: 1 });
+    vi.mocked(prisma.aiHandSummary.findMany).mockResolvedValue([]);
+
+    const first = flushSummaries("room1");
+    // While the first write is in flight, an overlapping flush must skip.
+    await flushSummaries("room1");
+    accumulateSummary("room1", summaryDraft("u1", 3));
+    release();
+    await first;
+    expect(prisma.aiHandSummary.createMany).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        vi.mocked(prisma.aiHandSummary.createMany).mock.calls[0][0] as {
+          data: unknown[];
+        }
+      ).data,
+    ).toHaveLength(2);
+
+    // Rows buffered while the skipped flush overlapped land on the next one.
+    await flushSummaries("room1");
+    expect(prisma.aiHandSummary.createMany).toHaveBeenCalledTimes(2);
+    expect(
+      (
+        vi.mocked(prisma.aiHandSummary.createMany).mock.calls[1][0] as {
+          data: unknown[];
+        }
+      ).data,
+    ).toHaveLength(1);
+  });
+});
+
 describe("lesson cache", () => {
   it("merges persona lessons first, then global, in load order", () => {
     refreshLessonCache([

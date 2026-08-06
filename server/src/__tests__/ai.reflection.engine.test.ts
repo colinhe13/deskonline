@@ -343,6 +343,13 @@ describe("reflectAll rejects invalid LLM output wholesale", () => {
       "missing required field",
       { lessons: [{ scope: "global", text: "ok" }], retireIds: [] },
     ],
+    [
+      "punctuation-only text",
+      {
+        lessons: [{ scope: "global", text: "！！！", evidence: "e" }],
+        retireIds: [],
+      },
+    ],
   ];
 
   it.each(cases)("discards %s without writing", async (_name, payload) => {

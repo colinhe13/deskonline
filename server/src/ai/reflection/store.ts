@@ -131,32 +131,42 @@ export function accumulateSummary(roomId: string, draft: SummaryDraft): void {
 }
 
 // Writes the room's pending rows, then prunes each affected user to the most
-// recent SUMMARY_WINDOW_PER_USER rows. Snapshot-copy semantics identical to
+// recent SUMMARY_WINDOW_PER_USER rows. Snapshot-copy semantics mirror
 // flushSelfStats: rows accumulated while the write is in flight survive; on
 // failure the buffer is untouched and the next flush retries. Losing a few
 // summaries on repeated failure is acceptable — they are reflection fodder,
-// not accounting.
+// not accounting. Unlike the increment-safe self-stats counters, concurrent
+// flushes would snapshot the same buffer twice and duplicate rows, so an
+// in-flight flush makes overlapping callers skip (rows stay buffered).
+const flushingRooms = new Set<string>();
+
 export async function flushSummaries(roomId: string): Promise<void> {
+  if (flushingRooms.has(roomId)) return;
   const list = pendingSummaries.get(roomId);
   if (!list || list.length === 0) return;
-  const snapshot = [...list];
-  await prisma.aiHandSummary.createMany({ data: snapshot });
-  pendingSummaries.set(roomId, list.slice(snapshot.length));
-  if (pendingSummaries.get(roomId)?.length === 0)
-    pendingSummaries.delete(roomId);
-  const userIds = [...new Set(snapshot.map((d) => d.userId))];
-  for (const userId of userIds) {
-    const rows = await prisma.aiHandSummary.findMany({
-      where: { userId },
-      orderBy: [{ playedAt: "desc" }, { id: "desc" }],
-      select: { id: true },
-    });
-    const excess = rows.slice(SUMMARY_WINDOW_PER_USER).map((r) => r.id);
-    if (excess.length > 0) {
-      await prisma.aiHandSummary.deleteMany({
-        where: { id: { in: excess } },
+  flushingRooms.add(roomId);
+  try {
+    const snapshot = [...list];
+    await prisma.aiHandSummary.createMany({ data: snapshot });
+    pendingSummaries.set(roomId, list.slice(snapshot.length));
+    if (pendingSummaries.get(roomId)?.length === 0)
+      pendingSummaries.delete(roomId);
+    const userIds = [...new Set(snapshot.map((d) => d.userId))];
+    for (const userId of userIds) {
+      const rows = await prisma.aiHandSummary.findMany({
+        where: { userId },
+        orderBy: [{ playedAt: "desc" }, { id: "desc" }],
+        select: { id: true },
       });
+      const excess = rows.slice(SUMMARY_WINDOW_PER_USER).map((r) => r.id);
+      if (excess.length > 0) {
+        await prisma.aiHandSummary.deleteMany({
+          where: { id: { in: excess } },
+        });
+      }
     }
+  } finally {
+    flushingRooms.delete(roomId);
   }
 }
 
@@ -238,5 +248,6 @@ export async function preloadLessonCache(): Promise<void> {
 
 export function resetReflectionStoreForTests(): void {
   pendingSummaries.clear();
+  flushingRooms.clear();
   lessonCache.clear();
 }
