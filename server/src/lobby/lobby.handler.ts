@@ -737,9 +737,12 @@ export class LobbyHandler {
     return keep;
   }
 
+  // Human-facing feed: AI entries are filtered out so AI-vs-AI mutual
+  // reading stays server-internal (leaking it would let humans manipulate
+  // the AIs' adaptive reads).
   private broadcastProfiles(room: Room) {
     room.broadcast(this.gateway, "ai:profile:update", {
-      profiles: profileStore.getViews(room.id),
+      profiles: profileStore.getViews(room.id).filter((v) => !v.isAi),
     });
   }
 
@@ -748,7 +751,8 @@ export class LobbyHandler {
   private roomStatePayload(room: Room) {
     return {
       room: room.toDetail(),
-      profiles: profileStore.getViews(room.id),
+      // Same human-only filter as broadcastProfiles.
+      profiles: profileStore.getViews(room.id).filter((v) => !v.isAi),
       aiOptions: listAiAccountOptions(room),
     };
   }
