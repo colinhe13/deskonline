@@ -2,8 +2,6 @@ import { config } from "../../config.js";
 import type { HandRecord, OpponentProfile, ProfileView } from "./types.js";
 import { applyHandToStats, computeRates, createStats } from "./stats.js";
 
-const RECENT_RECORDS_KEPT = 5;
-
 export class ProfileStore {
   private rooms = new Map<string, Map<string, OpponentProfile>>();
   private recentRecords = new Map<string, Map<string, HandRecord[]>>();
@@ -43,7 +41,7 @@ export class ProfileStore {
     }
     const list = recordsByUser.get(userId) ?? [];
     list.push(record);
-    while (list.length > RECENT_RECORDS_KEPT) list.shift();
+    while (list.length > config.aiProfileSummaryWindow) list.shift();
     recordsByUser.set(userId, list);
   }
 

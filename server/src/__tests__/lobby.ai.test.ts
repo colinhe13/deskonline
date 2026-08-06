@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  afterAll,
+} from "vitest";
 
 vi.mock("../db/client.js", () => ({
   prisma: {
@@ -72,12 +80,25 @@ import {
 import { callLlm } from "../ai/llm.client.js";
 import { decideAiAction } from "../ai/decision.js";
 import { ensureAiAccounts, resetAiStateForTests } from "../ai/accounts.js";
+import { config } from "../config.js";
 import { profileStore } from "../ai/profiling/store.js";
 import { LobbyHandler, SETTLEMENT_WINDOW_MS } from "../lobby/lobby.handler.js";
 import { roomManager } from "../lobby/room.manager.js";
 import { Room } from "../lobby/room.js";
 import { PokerEngine } from "../poker/engine.js";
 import type { Card } from "../poker/types.js";
+import type { HandRecord } from "../ai/profiling/types.js";
+
+const ORIGINAL_AI_ACCOUNTS = config.aiAccounts;
+const ORIGINAL_SUMMARY_WINDOW = config.aiProfileSummaryWindow;
+const ORIGINAL_MIN_HANDS = config.aiProfileMinHands;
+const ORIGINAL_SUMMARY_EVERY = config.aiProfileSummaryEvery;
+const TEST_AI_ACCOUNTS = [
+  "AI_XiaoZhi",
+  "AI_LaoWang",
+  "AI_XiaoMei",
+  "AI_AQiang",
+];
 
 interface SentMessage {
   userId?: string;
@@ -103,6 +124,18 @@ function makeFakeGateway() {
 }
 
 const card = (rank: string, suit: string): Card => ({ rank, suit }) as Card;
+
+function profileRecord(handNumber: number): HandRecord {
+  return {
+    actions: [
+      { street: "preflop", userId: "h1", action: "call", amount: handNumber },
+    ],
+    winners: [{ userId: "h1", amount: 4 }],
+    showdownParticipantIds: [],
+    revealedHandNames: {},
+    handNumber,
+  };
+}
 
 function resetRoom(room: Room) {
   for (const seat of room.seats) {
@@ -132,6 +165,10 @@ describe("lobby AI lifecycle", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    config.aiAccounts = TEST_AI_ACCOUNTS.join(",");
+    config.aiProfileSummaryWindow = 10;
+    config.aiProfileMinHands = 5;
+    config.aiProfileSummaryEvery = 10;
     vi.mocked(prisma.aiPersona.upsert).mockImplementation(
       async (args: { create: Record<string, unknown> }) =>
         ({ id: `persona-${args.create.slug}`, ...args.create }) as never,
@@ -189,8 +226,16 @@ describe("lobby AI lifecycle", () => {
     });
   }
 
-  async function addAiAs(hostId: string) {
-    await handler.handleMessage(hostId, "host", "ai:add", {});
+  async function addAiAs(hostId: string, requestedUsername?: string) {
+    const username =
+      requestedUsername ??
+      TEST_AI_ACCOUNTS.find(
+        (candidate) => !room.seats.some((seat) => seat.username === candidate),
+      ) ??
+      TEST_AI_ACCOUNTS[0];
+    await handler.handleMessage(hostId, "host", "ai:add", {
+      aiUsername: username,
+    });
   }
 
   // ----------------------------------------------------------------
@@ -200,11 +245,11 @@ describe("lobby AI lifecycle", () => {
   describe("ai:add", () => {
     it("seats a pool AI with confirmed min buy-in and deducts points", async () => {
       await joinAndConfirm("h1", "alice");
-      await addAiAs("h1");
+      await addAiAs("h1", "AI_XiaoMei");
 
       const seat = room.aiSeats()[0];
       expect(seat).toBeDefined();
-      expect(seat!.username).toBe("AI_XiaoZhi");
+      expect(seat!.username).toBe("AI_XiaoMei");
       expect(seat!.confirmed).toBe(true);
       expect(seat!.chips).toBe(room.settings.minBuyIn);
       expect(deductPoints).toHaveBeenCalledWith(
@@ -228,6 +273,107 @@ describe("lobby AI lifecycle", () => {
       ).toBe(true);
     });
 
+    it("publishes only active accounts and marks occupied choices", async () => {
+      await joinAndConfirm("h1", "alice");
+      const before = gateway.sent
+        .filter((message) => message.type === "room:state")
+        .slice(-1)[0];
+      const beforeOptions = (
+        before?.payload as {
+          aiOptions: { username: string; available: boolean }[];
+        }
+      ).aiOptions;
+      expect(beforeOptions.map((option) => option.username)).toEqual(
+        TEST_AI_ACCOUNTS,
+      );
+      expect(beforeOptions).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ username: "AI_MeiLing" }),
+          expect.objectContaining({ username: "AI_DaLiu" }),
+        ]),
+      );
+
+      await addAiAs("h1", "AI_LaoWang");
+      const after = gateway.sent
+        .filter((message) => message.type === "room:state")
+        .slice(-1)[0];
+      const afterOptions = (
+        after?.payload as {
+          aiOptions: { username: string; available: boolean }[];
+        }
+      ).aiOptions;
+      expect(afterOptions).toContainEqual({
+        username: "AI_LaoWang",
+        displayName: "松凶",
+        styleLabel: "LAG",
+        available: false,
+      });
+    });
+
+    it("requires a selected active account and rejects retired or malformed input", async () => {
+      await joinAndConfirm("h1", "alice");
+
+      await handler.handleMessage("h1", "host", "ai:add", {});
+      expect(room.aiSeats()).toHaveLength(0);
+      expect(
+        gateway.sent.some(
+          (message) =>
+            message.type === "room:error" &&
+            (message.payload as { code: string }).code === "AI_REQUIRED",
+        ),
+      ).toBe(true);
+
+      await handler.handleMessage("h1", "host", "ai:add", {
+        aiUsername: "AI_MeiLing",
+      });
+      await handler.handleMessage("h1", "host", "ai:add", {
+        aiUsername: { toString: () => "AI_XiaoZhi" },
+      });
+      expect(room.aiSeats()).toHaveLength(0);
+      expect(
+        gateway.sent.some(
+          (message) =>
+            message.type === "room:error" &&
+            (message.payload as { code: string }).code === "AI_NOT_AVAILABLE",
+        ),
+      ).toBe(true);
+    });
+
+    it("does not add or charge an already seated selected account", async () => {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1", "AI_XiaoZhi");
+      vi.mocked(deductPoints).mockClear();
+      await addAiAs("h1", "AI_XiaoZhi");
+
+      expect(room.aiSeats()).toHaveLength(1);
+      expect(deductPoints).not.toHaveBeenCalled();
+      expect(
+        gateway.sent.some(
+          (message) =>
+            message.type === "room:error" &&
+            (message.payload as { code: string }).code === "AI_ALREADY_SEATED",
+        ),
+      ).toBe(true);
+    });
+
+    it("serializes concurrent requests for the same selected account", async () => {
+      await joinAndConfirm("h1", "alice");
+      vi.mocked(deductPoints).mockClear();
+
+      await Promise.all([
+        handler.handleMessage("h1", "host", "ai:add", {
+          aiUsername: "AI_AQiang",
+        }),
+        handler.handleMessage("h1", "host", "ai:add", {
+          aiUsername: "AI_AQiang",
+        }),
+      ]);
+
+      expect(room.aiSeats()).toHaveLength(1);
+      expect(room.aiSeats()[0]?.username).toBe("AI_AQiang");
+      expect(deductPoints).toHaveBeenCalledTimes(1);
+    });
+
     it("rejects when the room is full", async () => {
       room.settings.maxPlayers = 2;
       await joinAndConfirm("h1", "alice");
@@ -245,20 +391,21 @@ describe("lobby AI lifecycle", () => {
       room.settings.maxPlayers = 9;
     });
 
-    it("rejects when no pool account is free", async () => {
+    it("rejects when every active account is already seated", async () => {
       await joinAndConfirm("h1", "alice");
       await addAiAs("h1");
       await addAiAs("h1");
       await addAiAs("h1");
-      expect(room.aiSeats()).toHaveLength(3);
-      gateway.sent.length = 0;
       await addAiAs("h1");
-      expect(room.aiSeats()).toHaveLength(3);
+      expect(room.aiSeats()).toHaveLength(4);
+      gateway.sent.length = 0;
+      await addAiAs("h1", "AI_XiaoZhi");
+      expect(room.aiSeats()).toHaveLength(4);
       expect(
         gateway.sent.some(
           (m) =>
             m.type === "room:error" &&
-            (m.payload as { code: string }).code === "NO_FREE_AI",
+            (m.payload as { code: string }).code === "AI_ALREADY_SEATED",
         ),
       ).toBe(true);
     });
@@ -296,6 +443,44 @@ describe("lobby AI lifecycle", () => {
       expect(room.status).toBe("playing");
       expect(room.autoResume).toBe(false);
       expect(handler["engines"].has(room.id)).toBe(true);
+    });
+  });
+
+  describe("profile summary cadence", () => {
+    it("waits for 10 observed hands and sends a 10-hand window", async () => {
+      await joinAndConfirm("h1", "alice");
+      await addAiAs("h1");
+      vi.mocked(callLlm).mockReset();
+      vi.mocked(callLlm).mockResolvedValue({ summary: "风格稳定" });
+
+      for (let hand = 1; hand <= 9; hand++) {
+        profileStore.recordHand(room.id, "h1", "alice", profileRecord(hand));
+      }
+      await handler["runProfileSummaries"](room);
+      expect(callLlm).not.toHaveBeenCalled();
+
+      profileStore.recordHand(room.id, "h1", "alice", profileRecord(10));
+      await handler["runProfileSummaries"](room);
+      expect(callLlm).toHaveBeenCalledTimes(1);
+      expect(callLlm.mock.calls[0][1]).toContain('"recentHands"');
+      expect(callLlm.mock.calls[0][1]).toContain("hand10");
+
+      vi.mocked(callLlm).mockClear();
+      for (let hand = 11; hand <= 19; hand++) {
+        profileStore.recordHand(room.id, "h1", "alice", profileRecord(hand));
+      }
+      await handler["runProfileSummaries"](room);
+      expect(callLlm).not.toHaveBeenCalled();
+
+      profileStore.recordHand(room.id, "h1", "alice", profileRecord(20));
+      expect(
+        profileStore
+          .getRecentRecords(room.id, "h1")
+          .map((record) => record.handNumber),
+      ).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      await handler["runProfileSummaries"](room);
+      expect(callLlm).toHaveBeenCalledTimes(1);
+      expect(callLlm.mock.calls[0][1]).toContain("call20");
     });
   });
 
@@ -1247,4 +1432,11 @@ describe("lobby AI lifecycle", () => {
       expect(chips.get(aiId)).toBe(room.settings.minBuyIn);
     });
   });
+});
+
+afterAll(() => {
+  config.aiAccounts = ORIGINAL_AI_ACCOUNTS;
+  config.aiProfileSummaryWindow = ORIGINAL_SUMMARY_WINDOW;
+  config.aiProfileMinHands = ORIGINAL_MIN_HANDS;
+  config.aiProfileSummaryEvery = ORIGINAL_SUMMARY_EVERY;
 });

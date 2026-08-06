@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { WebSocketGateway } from "../ws/gateway.js";
 import { roomManager } from "./room.manager.js";
 import {
@@ -13,7 +14,12 @@ import {
 import { PokerEngine, HandResult } from "../poker/engine.js";
 import { Room } from "./room.js";
 import { livekitService } from "../voice/livekit.service.js";
-import { isAiUserId, pickFreeAi } from "../ai/accounts.js";
+import {
+  findAiAccount,
+  isAiUserId,
+  listAiAccountOptions,
+  pickFreeAi,
+} from "../ai/accounts.js";
 import { decideAiAction } from "../ai/decision.js";
 import { recordAiDecision } from "../ai/stats.js";
 import { buildHandRecord } from "../ai/profiling/handRecord.js";
@@ -28,6 +34,10 @@ import {
 } from "../ws/protocol.js";
 
 export const SETTLEMENT_WINDOW_MS = 8000;
+
+const addAiPayloadSchema = z.object({
+  aiUsername: z.string().trim().min(1).max(32),
+});
 
 export class LobbyHandler {
   private engines: Map<string, PokerEngine> = new Map();
@@ -159,10 +169,16 @@ export class LobbyHandler {
         this.handleChatSend(userId, username, payload);
         break;
       case "ai:add":
-        await this.handleAddAi(userId);
+        await this.withRoomCommandLock(
+          this.findRoomForUser(userId)?.id ?? "main",
+          () => this.handleAddAi(userId, payload),
+        );
         break;
       case "ai:remove":
-        await this.handleRemoveAi(userId, payload);
+        await this.withRoomCommandLock(
+          this.findRoomForUser(userId)?.id ?? "main",
+          () => this.handleRemoveAi(userId, payload),
+        );
         break;
       default:
         break;
@@ -625,7 +641,11 @@ export class LobbyHandler {
   // room:state is the full snapshot (also sent on reconnect); attaching the
   // profile views here lets clients rebuild their profile cache from scratch.
   private roomStatePayload(room: Room) {
-    return { room: room.toDetail(), profiles: profileStore.getViews(room.id) };
+    return {
+      room: room.toDetail(),
+      profiles: profileStore.getViews(room.id),
+      aiOptions: listAiAccountOptions(room),
+    };
   }
 
   private sendRoomState(room: Room) {
@@ -1738,7 +1758,7 @@ export class LobbyHandler {
   // AI management (host-only)
   // ------------------------------------------------------------------
 
-  private async handleAddAi(userId: string) {
+  private async handleAddAi(userId: string, payload: unknown) {
     const room = roomManager.findRoomByPlayer(userId);
     if (!room) return;
 
@@ -1757,11 +1777,29 @@ export class LobbyHandler {
       return;
     }
 
-    const account = pickFreeAi(room);
+    const parsed = addAiPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "AI_REQUIRED",
+        message: "请选择要添加的 AI",
+      });
+      return;
+    }
+
+    const configuredAccount = findAiAccount(parsed.data.aiUsername);
+    if (!configuredAccount) {
+      this.gateway.sendToUser(userId, "room:error", {
+        code: "AI_NOT_AVAILABLE",
+        message: "该 AI 当前不可添加",
+      });
+      return;
+    }
+
+    const account = pickFreeAi(room, configuredAccount.username);
     if (!account) {
       this.gateway.sendToUser(userId, "room:error", {
-        code: "NO_FREE_AI",
-        message: "没有空闲的 AI 账号",
+        code: "AI_ALREADY_SEATED",
+        message: "该 AI 已在本桌",
       });
       return;
     }

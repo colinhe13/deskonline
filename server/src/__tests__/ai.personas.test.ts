@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 vi.mock("../db/client.js", () => ({
   prisma: {
@@ -23,13 +23,22 @@ import { prisma } from "../db/client.js";
 import {
   PERSONA_SEEDS,
   ensureAiPersonas,
+  personaForAccount,
   personaForPoolIndex,
   personaViewBySlug,
   personaOfUser,
   bindUserPersona,
   resetPersonasForTests,
 } from "../ai/personas.js";
-import { ensureAiAccounts, resetAiStateForTests } from "../ai/accounts.js";
+import {
+  ensureAiAccounts,
+  listAiAccounts,
+  resetAiStateForTests,
+} from "../ai/accounts.js";
+import { config } from "../config.js";
+
+const ORIGINAL_AI_ACCOUNTS = config.aiAccounts;
+const TEST_AI_ACCOUNTS = "AI_XiaoZhi,AI_LaoWang,AI_XiaoMei,AI_AQiang";
 
 const EXPECTED_SLUGS = [
   "tight-aggressive",
@@ -78,6 +87,13 @@ describe("PERSONA_SEEDS", () => {
     expect(personaForPoolIndex(5).slug).toBe("balanced");
     expect(personaForPoolIndex(6).slug).toBe("tight-aggressive");
     expect(personaForPoolIndex(7).slug).toBe("loose-aggressive");
+  });
+
+  it("keeps reviewed account identities on their intended personas", () => {
+    expect(personaForAccount("AI_XiaoZhi", 0).slug).toBe("tight-aggressive");
+    expect(personaForAccount("AI_LaoWang", 1).slug).toBe("loose-aggressive");
+    expect(personaForAccount("AI_XiaoMei", 2).slug).toBe("maniac");
+    expect(personaForAccount("AI_AQiang", 3).slug).toBe("balanced");
   });
 });
 
@@ -136,6 +152,7 @@ describe("personaOfUser", () => {
 describe("ensureAiAccounts persona binding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    config.aiAccounts = TEST_AI_ACCOUNTS;
     resetPersonasForTests();
     resetAiStateForTests();
     vi.mocked(prisma.aiPersona.upsert).mockImplementation(
@@ -144,7 +161,7 @@ describe("ensureAiAccounts persona binding", () => {
     );
   });
 
-  it("assigns personas by pool order when creating accounts", async () => {
+  it("assigns personas by stable account identity when creating accounts", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
     vi.mocked(prisma.user.create).mockImplementation(
       async (args: { data: { username: string; personaId: string | null } }) =>
@@ -168,10 +185,43 @@ describe("ensureAiAccounts persona binding", () => {
       personaId: "p-loose-aggressive",
     });
     expect(created[2]).toMatchObject({
-      username: "AI_MeiLing",
-      personaId: "p-calling-station",
+      username: "AI_XiaoMei",
+      personaId: "p-maniac",
+    });
+    expect(created[3]).toMatchObject({
+      username: "AI_AQiang",
+      personaId: "p-balanced",
     });
     expect(personaOfUser("ai-AI_XiaoZhi")?.slug).toBe("tight-aggressive");
+  });
+
+  it("filters retired accounts even when an old environment lists them", async () => {
+    config.aiAccounts =
+      "AI_XiaoZhi,AI_LaoWang,AI_XiaoMei,AI_AQiang,AI_MeiLing,AI_DaLiu";
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.user.create).mockImplementation(
+      async (args: { data: { username: string } }) =>
+        ({
+          id: `ai-${args.data.username}`,
+          username: args.data.username,
+        }) as never,
+    );
+
+    await ensureAiAccounts();
+
+    expect(listAiAccounts().map((account) => account.username)).toEqual(
+      TEST_AI_ACCOUNTS.split(","),
+    );
+    expect(prisma.user.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ username: "AI_MeiLing" }),
+      }),
+    );
+    expect(prisma.user.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ username: "AI_DaLiu" }),
+      }),
+    );
   });
 
   it("backfills personaId for existing AI accounts without one", async () => {
@@ -188,7 +238,7 @@ describe("ensureAiAccounts persona binding", () => {
     const updates = vi
       .mocked(prisma.user.update)
       .mock.calls.map((c) => (c[0] as { data: { personaId?: string } }).data);
-    expect(updates.length).toBe(3);
+    expect(updates.length).toBe(4);
     expect(updates[0]).toMatchObject({ personaId: "p-tight-aggressive" });
   });
 
@@ -205,4 +255,8 @@ describe("ensureAiAccounts persona binding", () => {
     await ensureAiAccounts();
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
+});
+
+afterAll(() => {
+  config.aiAccounts = ORIGINAL_AI_ACCOUNTS;
 });

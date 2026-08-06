@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 vi.mock("../ai/llm.client.js", () => ({
   callLlm: vi.fn(),
@@ -14,6 +14,9 @@ import type { HandRecord } from "../ai/profiling/types.js";
 import { config } from "../config.js";
 
 const mockedCallLlm = vi.mocked(callLlm);
+const ORIGINAL_SUMMARY_WINDOW = config.aiProfileSummaryWindow;
+const ORIGINAL_MIN_HANDS = config.aiProfileMinHands;
+const ORIGINAL_SUMMARY_EVERY = config.aiProfileSummaryEvery;
 
 function record(userId: string): HandRecord {
   return {
@@ -31,6 +34,9 @@ function record(userId: string): HandRecord {
 describe("ProfileStore", () => {
   let store: ProfileStore;
   beforeEach(() => {
+    config.aiProfileSummaryWindow = 10;
+    config.aiProfileMinHands = 5;
+    config.aiProfileSummaryEvery = 10;
     store = new ProfileStore();
   });
 
@@ -42,11 +48,15 @@ describe("ProfileStore", () => {
     expect(store.getProfile("room2", "u1")).toBeUndefined();
   });
 
-  it("keeps at most 5 recent records per opponent", () => {
-    for (let i = 0; i < 7; i++) {
-      store.recordHand("room1", "u1", "alice", record("u1"));
+  it("keeps at most 10 recent records per opponent", () => {
+    for (let i = 0; i < 12; i++) {
+      const hand = record("u1");
+      hand.handNumber = i + 1;
+      store.recordHand("room1", "u1", "alice", hand);
     }
-    expect(store.getRecentRecords("room1", "u1")).toHaveLength(5);
+    expect(
+      store.getRecentRecords("room1", "u1").map((r) => r.handNumber),
+    ).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
 
   it("getViews hides stats and note below the min sample threshold", () => {
@@ -232,4 +242,10 @@ describe("summarizeOpponent", () => {
     expect(userContent).not.toMatch(/[2-9TJQKA][hdcs]\b/);
     expect(userContent).not.toMatch(/hearts|clubs|diamonds|spades/);
   });
+});
+
+afterAll(() => {
+  config.aiProfileSummaryWindow = ORIGINAL_SUMMARY_WINDOW;
+  config.aiProfileMinHands = ORIGINAL_MIN_HANDS;
+  config.aiProfileSummaryEvery = ORIGINAL_SUMMARY_EVERY;
 });

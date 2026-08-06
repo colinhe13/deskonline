@@ -16,10 +16,15 @@ export const config = {
   aiApiKey: process.env.AI_API_KEY || "",
   aiTimeoutMs: parseInt(process.env.AI_TIMEOUT_MS || "10000", 10),
   aiSummaryTimeoutMs: parseInt(process.env.AI_SUMMARY_TIMEOUT_MS || "4000", 10),
-  aiAccounts: process.env.AI_ACCOUNTS || "AI_XiaoZhi,AI_LaoWang,AI_MeiLing",
+  aiAccounts:
+    process.env.AI_ACCOUNTS || "AI_XiaoZhi,AI_LaoWang,AI_XiaoMei,AI_AQiang",
   aiProfileMinHands: parseInt(process.env.AI_PROFILE_MIN_HANDS || "5", 10),
+  aiProfileSummaryWindow: parseInt(
+    process.env.AI_PROFILE_SUMMARY_WINDOW || "10",
+    10,
+  ),
   aiProfileSummaryEvery: parseInt(
-    process.env.AI_PROFILE_SUMMARY_EVERY || "5",
+    process.env.AI_PROFILE_SUMMARY_EVERY || "10",
     10,
   ),
 };

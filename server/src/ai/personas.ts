@@ -66,6 +66,18 @@ export const PERSONA_SEEDS: PersonaSeed[] = [
   },
 ];
 
+// Account identity is stable even when the active pool is shortened or
+// reordered. Keep this separate from PERSONA_SEEDS so disabled accounts can
+// remain in the database without shifting the personas of active accounts.
+const PERSONA_SLUG_BY_ACCOUNT: Record<string, string> = {
+  AI_XiaoZhi: "tight-aggressive",
+  AI_LaoWang: "loose-aggressive",
+  AI_MeiLing: "calling-station",
+  AI_XiaoMei: "maniac",
+  AI_DaLiu: "nit-rock",
+  AI_AQiang: "balanced",
+};
+
 const personaBySlug = new Map<string, AiPersonaView>();
 const personaByUserId = new Map<string, AiPersonaView>();
 
@@ -86,6 +98,17 @@ export async function ensureAiPersonas(): Promise<Map<string, AiPersonaView>> {
 
 export function personaForPoolIndex(index: number): PersonaSeed {
   return PERSONA_SEEDS[index % PERSONA_SEEDS.length];
+}
+
+export function personaForAccount(
+  username: string,
+  poolIndex: number,
+): PersonaSeed {
+  const slug = PERSONA_SLUG_BY_ACCOUNT[username];
+  return (
+    PERSONA_SEEDS.find((seed) => seed.slug === slug) ??
+    personaForPoolIndex(poolIndex)
+  );
 }
 
 export function personaViewBySlug(slug: string): AiPersonaView | undefined {
