@@ -37,6 +37,7 @@ import {
 } from "../ai/selfreview/persist.js";
 import { selfReviewStore } from "../ai/selfreview/store.js";
 import { buildSummaryDraft } from "../ai/reflection/summary.js";
+import { reflectAll } from "../ai/reflection/reflect.js";
 import {
   accumulateSummary,
   clearSummariesRoom,
@@ -86,6 +87,9 @@ export class LobbyHandler {
   private roomHandCounts: Map<string, number> = new Map();
   // One self-stats flush + evolution cycle per room at a time.
   private evolutionBusy: Set<string> = new Set();
+  // Server-wide settled-hand counter (in-process; reset on restart only
+  // shifts the reflection boundary cadence). Drives the global reflection.
+  private serverHandCount = 0;
 
   constructor(private gateway: WebSocketGateway) {}
 
@@ -496,6 +500,12 @@ export class LobbyHandler {
           this.roomHandCounts.set(room.id, count);
           if (count % config.aiEvolveEveryHands === 0) {
             void this.runLearningCycle(room);
+          }
+          this.serverHandCount += 1;
+          if (this.serverHandCount % config.aiReflectEveryHands === 0) {
+            void reflectAll().catch((err) => {
+              console.error("[ai][reflect] cycle failed", err);
+            });
           }
         }
       }

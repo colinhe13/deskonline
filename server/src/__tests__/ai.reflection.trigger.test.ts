@@ -69,8 +69,6 @@ vi.mock("../voice/livekit.service.js", () => ({
   },
 }));
 
-// The persistence layer is exercised by ai.evolution.persist.test.ts; here we
-// only verify the lobby wiring (when flush/evolve fire, with what inputs).
 vi.mock("../ai/selfreview/persist.js", () => ({
   accumulateEvaluation: vi.fn(),
   flushSelfStats: vi.fn().mockResolvedValue(undefined),
@@ -79,14 +77,15 @@ vi.mock("../ai/selfreview/persist.js", () => ({
   resetSelfStatsPersistForTests: vi.fn(),
 }));
 
+// The reflection engine itself is covered by ai.reflection.engine.test.ts;
+// here we verify the lobby trigger wiring only.
+vi.mock("../ai/reflection/reflect.js", () => ({
+  reflectAll: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { prisma } from "../db/client.js";
-import {
-  flushSelfStats,
-  loadSelfStats,
-  clearSelfStatsRoom,
-} from "../ai/selfreview/persist.js";
+import { reflectAll } from "../ai/reflection/reflect.js";
 import { ensureAiAccounts, resetAiStateForTests } from "../ai/accounts.js";
-import { personaOfUser } from "../ai/personas.js";
 import { config } from "../config.js";
 import { profileStore } from "../ai/profiling/store.js";
 import { selfReviewStore } from "../ai/selfreview/store.js";
@@ -94,6 +93,7 @@ import { LobbyHandler } from "../lobby/lobby.handler.js";
 import { roomManager } from "../lobby/room.manager.js";
 import { Room } from "../lobby/room.js";
 
+const ORIGINAL_REFLECT_EVERY = config.aiReflectEveryHands;
 const ORIGINAL_EVOLVE_EVERY = config.aiEvolveEveryHands;
 const TEST_AI_ACCOUNTS = [
   "AI_XiaoZhi",
@@ -134,7 +134,7 @@ function resetRoom(room: Room) {
   room.dealerSeatIndex = null;
 }
 
-describe("cross-match learning lobby wiring", () => {
+describe("global reflection trigger wiring", () => {
   let gateway: ReturnType<typeof makeFakeGateway>;
   let handler: LobbyHandler;
   let room: Room;
@@ -142,13 +142,14 @@ describe("cross-match learning lobby wiring", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     config.aiAccounts = TEST_AI_ACCOUNTS.join(",");
+    config.aiReflectEveryHands = 2;
     config.aiEvolveEveryHands = 2;
+
     vi.mocked(prisma.aiPersona.upsert).mockImplementation(
       async (args: { create: Record<string, unknown> }) =>
         ({ id: `persona-${args.create.slug}`, ...args.create }) as never,
     );
     vi.mocked(prisma.aiPersona.update).mockResolvedValue({} as never);
-    vi.mocked(prisma.aiSelfStats.findMany).mockResolvedValue([]);
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
     vi.mocked(prisma.user.create).mockImplementation(
       async (args: { data: { username: string } }) =>
@@ -177,6 +178,7 @@ describe("cross-match learning lobby wiring", () => {
     handler["roomCommandQueues"].clear();
     handler["roomHandCounts"].clear();
     handler["evolutionBusy"].clear();
+    handler["serverHandCount"] = 0;
   });
 
   afterEach(() => {
@@ -189,6 +191,7 @@ describe("cross-match learning lobby wiring", () => {
   });
 
   afterAll(() => {
+    config.aiReflectEveryHands = ORIGINAL_REFLECT_EVERY;
     config.aiEvolveEveryHands = ORIGINAL_EVOLVE_EVERY;
   });
 
@@ -201,13 +204,6 @@ describe("cross-match learning lobby wiring", () => {
     });
   }
 
-  async function addAiAs(hostId: string, aiUsername: string) {
-    await handler.handleMessage(hostId, "host", "ai:add", { aiUsername });
-  }
-
-  // Plays the current hand to settlement: humans check/call, AI turns arrive
-  // asynchronously (mocked LLM folds). The engine's own hand_result
-  // broadcast drives the settlement pipeline under test.
   async function driveToSettled() {
     const engine = handler["engines"].get(room.id)!;
     let guard = 0;
@@ -243,111 +239,33 @@ describe("cross-match learning lobby wiring", () => {
     );
   }
 
-  it("flushes and evolves at the aiEvolveEveryHands boundary, not before", async () => {
+  it("fires reflectAll only at the aiReflectEveryHands boundary", async () => {
     await joinAndConfirm("h1", "alice");
-    await addAiAs("h1", "AI_XiaoZhi");
+    await handler.handleMessage("h1", "host", "ai:add", {
+      aiUsername: "AI_XiaoZhi",
+    });
     room.status = "playing";
     handler["startEngine"](room);
 
     await driveToSettled();
-    expect(flushSelfStats).not.toHaveBeenCalled();
+    expect(reflectAll).not.toHaveBeenCalled();
+    expect(handler["serverHandCount"]).toBe(1);
 
     await settleAndRebuild();
-    expect(handler["engines"].get(room.id)).toBeDefined();
-
     await driveToSettled();
     await vi.waitFor(() => {
-      expect(flushSelfStats).toHaveBeenCalledWith(room.id);
+      expect(handler["serverHandCount"]).toBe(2);
+      expect(reflectAll).toHaveBeenCalledTimes(1);
     });
-    // Evolution ran for the seated AI (no persisted stats → no persona write).
+
+    // The boundary also flushes accumulated hand summaries for the seated AI.
     await vi.waitFor(() => {
-      expect(loadSelfStats).toHaveBeenCalled();
+      expect(prisma.aiHandSummary.createMany).toHaveBeenCalled();
     });
-    expect(prisma.aiPersona.update).not.toHaveBeenCalled();
-  });
-
-  it("applies the evolved baseline to the hot path after the boundary cycle", async () => {
-    vi.mocked(loadSelfStats).mockResolvedValue(
-      new Map([
-        [
-          "ai-AI_XiaoZhi",
-          {
-            bluffAttempts: 10,
-            bluffSuccess: 9,
-            cbetAttempts: 0,
-            cbetSuccess: 0,
-          },
-        ],
-      ]),
-    );
-    await joinAndConfirm("h1", "alice");
-    await addAiAs("h1", "AI_XiaoZhi");
-    room.status = "playing";
-    handler["startEngine"](room);
-
-    await driveToSettled();
-    await settleAndRebuild();
-    await driveToSettled();
-
-    // tight-aggressive seed 0.08, rate 0.9 >= 0.6 → ×1.1 = 0.088.
-    await vi.waitFor(() => {
-      expect(prisma.aiPersona.update).toHaveBeenCalledWith({
-        where: { id: "persona-tight-aggressive" },
-        data: expect.objectContaining({
-          evolvedBluffHintRate: expect.closeTo(0.088, 10),
-        }),
-      });
-    });
-    expect(personaOfUser("ai-AI_XiaoZhi")?.bluffHintRate).toBeCloseTo(
-      0.088,
-      10,
-    );
-    expect(personaOfUser("ai-AI_XiaoZhi")?.seedBluffHintRate).toBeCloseTo(
-      0.08,
-      10,
-    );
-  });
-
-  it("runs a final flush + evolution at teardown when the last human leaves", async () => {
-    await joinAndConfirm("h1", "alice");
-    await addAiAs("h1", "AI_XiaoZhi");
-    room.status = "playing";
-    handler["startEngine"](room);
-
-    await driveToSettled();
-    expect(flushSelfStats).not.toHaveBeenCalled();
-
-    // Human leaves; the hand is already settled, so the hand boundary removes
-    // the last human and tears the AI seats down.
-    await handler.handleMessage("h1", "alice", "room:leave", {});
-    await settleAndRebuild();
-
-    await vi.waitFor(() => {
-      expect(flushSelfStats).toHaveBeenCalledWith(room.id);
-      expect(clearSelfStatsRoom).toHaveBeenCalledWith(room.id);
-      expect(loadSelfStats).toHaveBeenCalledWith(["ai-AI_XiaoZhi"]);
-    });
-    expect(room.aiSeats()).toHaveLength(0);
-    expect(handler["roomHandCounts"].has(room.id)).toBe(false);
-  });
-
-  it("never lets a persistence failure escape into settlement", async () => {
-    vi.mocked(flushSelfStats).mockRejectedValue(new Error("pg down"));
-    vi.mocked(prisma.aiSelfStats.findMany).mockRejectedValue(
-      new Error("pg down"),
-    );
-    await joinAndConfirm("h1", "alice");
-    await addAiAs("h1", "AI_XiaoZhi");
-    room.status = "playing";
-    handler["startEngine"](room);
-
-    await driveToSettled();
-    await settleAndRebuild();
-    await driveToSettled();
-    await settleAndRebuild();
-
-    // The table keeps running: a fresh engine was built despite DB outage.
-    expect(handler["engines"].get(room.id)).toBeDefined();
-    expect(room.status).toBe("playing");
+    const flushed = vi
+      .mocked(prisma.aiHandSummary.createMany)
+      .mock.calls.map((c) => (c[0] as { data: unknown[] }).data)
+      .flat();
+    expect(flushed.some((d) => d.userId === "ai-AI_XiaoZhi")).toBe(true);
   });
 });
