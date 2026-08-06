@@ -770,13 +770,14 @@ export class LobbyHandler {
     if (!room.aiSeats().some((s) => s.userId)) return;
     if (this.profilingBusy.has(roomId)) return;
 
-    const eligible = profileStore
-      .listProfiles(roomId)
-      .filter(
-        (p) =>
-          p.stats.hands >= config.aiProfileMinHands &&
-          p.handsSinceLastSummary >= config.aiProfileSummaryEvery,
-      );
+    const eligible = profileStore.listProfiles(roomId).filter(
+      (p) =>
+        // AI targets get deterministic persona notes, never an LLM summary:
+        // the per-hand summary budget stays entirely for humans.
+        !isAiUserId(p.userId) &&
+        p.stats.hands >= config.aiProfileMinHands &&
+        p.handsSinceLastSummary >= config.aiProfileSummaryEvery,
+    );
     if (eligible.length === 0) return;
 
     this.profilingBusy.add(roomId);

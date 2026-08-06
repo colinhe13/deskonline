@@ -138,7 +138,7 @@ function positionOf(
 // Guidance shown alongside injected opponent profiles; steers the model toward
 // the exploitative playbook instead of conservative GTO adherence.
 const OPPONENT_PROFILE_GUIDANCE =
-  "opponentProfiles 是你对同桌对手积累的行为统计与风格评价。样本充足时（stats.hands ≥ 15），按系统提示词『剥削策略』章节的量化规则果断偏离 GTO 基线，把对手漏洞剥削到极限；样本不足时才回退 GTO 基线。";
+  "opponentProfiles 是你对同桌对手积累的行为统计与风格评价。样本充足时（stats.hands ≥ 15），按系统提示词『剥削策略』章节的量化规则果断偏离 GTO 基线，把对手漏洞剥削到极限；样本不足时才回退 GTO 基线。opponentProfiles 可能包含 AI 对手；对 AI 的读取同样基于其已观察到的行为样本，按同一套剥削规则执行，不因其是 AI 而区别对待。";
 
 // Assembles the AI-visible situation. Opponents' hole cards are NEVER
 // included — mirrors the getStateForPlayer isolation guarantee.
