@@ -33,4 +33,5 @@ export const config = {
     10,
   ),
   aiSelfStatsWindow: parseInt(process.env.AI_SELF_STATS_WINDOW || "20", 10),
+  aiEvolveEveryHands: parseInt(process.env.AI_EVOLVE_EVERY_HANDS || "20", 10),
 };
