@@ -63,8 +63,8 @@ npm run dev
 `server/deploy/` 提供 Docker Compose 编排（game-server + nginx + livekit-server）：
 
 ```bash
-# 编辑 server/deploy/sync.sh，将 <YOUR_SERVER_IP> 替换为你的服务器地址
-./server/deploy/sync.sh
+# 在仓库根目录执行，TP_SERVER_IP 指向你的服务器地址
+TP_SERVER_IP=<your-ip> ./server/deploy/sync.sh
 ```
 
 服务器上需准备 `.env`（参考 `server/.env.example`）供 compose 注入。
